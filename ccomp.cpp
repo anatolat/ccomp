@@ -19,6 +19,10 @@ enum {
 	, T_COLON
 
 	, T_ASSIGNMENT
+	, T_ADD
+	, T_SUB
+	, T_MUL
+	, T_LESS
 	, T_EQ
 
 	, T_LPAREN // (
@@ -62,6 +66,10 @@ enum {
 	, OP_RETURN
 	, OP_JMPZ
 	, OP_LABEL
+	, OP_ADD
+	, OP_SUB
+	, OP_MUL
+	, OP_LESS
 };
 enum {
 	VAL_STR,
@@ -88,9 +96,9 @@ int nexterns;
 char externs[256][24];
 
 int add_extern(const char* s);
-
 int add_param(const char* s);
 int add_local(const char* s);
+
 int get_local(const char* s);
 int get_param(const char* s);
 int get_extern(const char* s);
@@ -123,6 +131,10 @@ const char* tok2str(int tok) {
 
 	case T_ASSIGNMENT: return "ASSIGNMENT";
 	case T_EQ: return "EQ";
+	case T_ADD: return "ADD";
+	case T_SUB: return "SUB";
+	case T_MUL: return "MUL";
+	case T_LESS: return "LESS";
 
 	case T_LPAREN: return "LPAREN";
 	case T_RPAREN: return "RPAREN";
@@ -154,6 +166,10 @@ int next_token_helper() {
 	if (ch == ':') return T_COLON;
 
 	if (ch == '=') return T_ASSIGNMENT;
+	if (ch == '+') return T_ADD;
+	if (ch == '-') return T_SUB;
+	if (ch == '*') return T_MUL;
+	if (ch == '<') return T_LESS;
 
 	if (ch == '(') return T_LPAREN;
 	if (ch == ')') return T_RPAREN;
@@ -325,6 +341,17 @@ void parse_assignment_expr() {
 
 		emit(OP_SAVE);
 	}
+
+	if (token == T_ADD || token == T_SUB || token == T_MUL || token == T_LESS) {
+		int op = token;
+		next_token();
+		parse_postfix_expr();
+
+		if (op == T_ADD) emit(OP_ADD);
+		else if (op == T_SUB) emit(OP_SUB);
+		else if (op == T_MUL) emit(OP_MUL);
+		else if (op == T_LESS) emit(OP_LESS);
+	}
 }
 
 void parse_func_params() {
@@ -400,6 +427,7 @@ void parse_stmt() {
 		parse_stmt();
 
 		opcodes[label] = emit(OP_LABEL);
+		return;
 	}
 
 	// ;
@@ -463,6 +491,8 @@ int emit(int op) {
 
 void start_func(const char* s) {
 	strcpy(funcname, s);
+
+	add_extern(s);
 
 	gen_func_prologue(funcname);
 	nparams = 0;
@@ -589,6 +619,8 @@ void gen_code() {
 		else if (op == OP_CALL) {
 			int st = opcodes[i++];
 			printf("  call DWORD PTR [esp+%d]\n", st);
+			printf("  add esp, %d\n", st+4); // size of paremters + pointer to function
+			printf("  push eax\n");
 		}
 		else if (op == OP_RETURN) {
 			printf("  pop eax\n");
@@ -603,6 +635,33 @@ void gen_code() {
 		}
 		else if (op == OP_LABEL) {
 			printf("\n__%s_%d:\n", funcname, i-1);
+		}
+		else if (op == OP_ADD) {
+			printf("  pop eax\n");
+			printf("  pop ecx\n");
+			printf("  add ecx, eax\n");
+			printf("  push ecx\n");
+		}
+		else if (op == OP_SUB) {
+			printf("  pop eax\n");
+			printf("  pop ecx\n");
+			printf("  sub ecx, eax\n");
+			printf("  push ecx\n");
+		}
+		else if (op == OP_MUL) {
+			printf("  pop eax\n");
+			printf("  pop ecx\n");
+			printf("  imul ecx, eax\n");
+			printf("  push ecx\n");
+		}
+		else if (op == OP_LESS) {
+			printf("  pop eax\n");
+			printf("  pop ecx\n");
+			printf("  cmp ecx, eax\n");
+			printf("  setl al\n");
+			printf("  cbw\n");
+			printf("  cwde\n");
+			printf("  push eax\n");
 		}
 	}
 }

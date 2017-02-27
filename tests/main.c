@@ -1,4 +1,6 @@
-int test()  {
-	if (1) return 1;
-	return 0;
+int expr(int a, int b) {
+	int c;
+	c = a < b;
+
+	return c;
 }

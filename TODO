@@ -1,15 +1,13 @@
 
  - Expressions & priority
- - Support loading variable values
- - Parameters
- - Return statement
+ + Support loading variable values
+ + Parameters
+ + Return statement
  - Comparison 
  - Arithmetic operators
 
 
 
  - Call with more than one variable
- - Clean up stack after calling variable
+ - Clean up stack after calling function
  - Allocate stack with required size
-
- a = b
