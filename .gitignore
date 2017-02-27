@@ -1,0 +1,7 @@
+Debug
+Release
+playground
+*.opensdf
+*.sdf
+*.suo
+*.user
