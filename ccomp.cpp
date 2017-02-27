@@ -59,6 +59,9 @@ enum {
 	, OP_PUSH
 	, OP_SAVE
 	, OP_CALL
+	, OP_RETURN
+	, OP_JMPZ
+	, OP_LABEL
 };
 enum {
 	VAL_STR,
@@ -72,6 +75,8 @@ int nopcodes = 0;
 int opcodes[1024];
 
 int emit(int);
+
+char funcname[256];
 
 int nparams;
 char params[256][64];
@@ -91,7 +96,7 @@ int get_param(const char* s);
 int get_extern(const char* s);
 
 void start_func(const char* s);
-void end_func(const char* s);
+void end_func();
 // end
 
 // asmgen
@@ -169,10 +174,18 @@ int next_token_helper() {
 		token_id[i] = 0;
 
 		int t = T_ID;
-		for (int i = 0; i < ntypes; ++i) {
-			if (strcmp(types[i], token_id) == 0) {
-				t = T_TYPEID;
-				break;
+		if (!strcmp(token_id, "return")) {
+			t = T_RETURN;
+		}
+		else if (!strcmp(token_id, "if")) {
+			t = T_IF;
+		}
+		else {
+			for (int i = 0; i < ntypes; ++i) {
+				if (!strcmp(types[i], token_id)) {
+					t = T_TYPEID;
+					break;
+				}
 			}
 		}
 
@@ -353,13 +366,40 @@ void parse_stmt() {
 			
 
 			parse_stmts(T_RCURLY);
-			end_func(id);
+			end_func();
 		}
 		else {
 			add_local(id);
 			check_token(T_SEMI);
 		}
 		return;
+	}
+
+	if (token == T_RETURN) {
+		next_token();
+		parse_assignment_expr();
+		check_token(T_SEMI);
+
+		emit(OP_RETURN);
+		return;
+	}
+
+	if (token == T_IF) {
+		
+		parse_token(T_LPAREN);
+
+		next_token();
+		parse_assignment_expr();
+
+		check_token(T_RPAREN);
+
+		emit(OP_JMPZ);
+		int label = emit(0);
+
+		next_token();
+		parse_stmt();
+
+		opcodes[label] = emit(OP_LABEL);
 	}
 
 	// ;
@@ -376,6 +416,11 @@ void parse_stmts(int terminator) {
 		next_token();
 		if (token == terminator) break;
 
+		if (token == T_EOF) {
+			check_token(terminator);
+			break;
+		}
+
 		parse_stmt();
 	}
 }
@@ -385,6 +430,11 @@ void parse_stmts() {
 	while (1) {
 		next_token();
 		if (token == T_RCURLY) break;
+
+		if (token == T_EOF) {
+			check_token(T_RCURLY);
+			break;
+		}
 
 		parse_stmt();
 	}
@@ -412,16 +462,18 @@ int emit(int op) {
 }
 
 void start_func(const char* s) {
-	gen_func_prologue(s);
+	strcpy(funcname, s);
+
+	gen_func_prologue(funcname);
 	nparams = 0;
 	nlocals = 0;
 }
 
-void end_func(const char* s) {
+void end_func() {
 	gen_code();
 	nopcodes = 0;
 
-	gen_func_epilogue(s);
+	gen_func_epilogue(funcname);
 }
 
 int add_param(const char* s) {
@@ -473,6 +525,7 @@ void gen_func_prologue(const char* name) {
 
 void gen_func_epilogue(const char* name) {
 	printf("\n");
+	printf("__exit_%s:\n", funcname);
 	printf("  mov esp, ebp\n");
 	printf("  pop ebp\n");
 	printf("  ret 0\n");
@@ -536,6 +589,20 @@ void gen_code() {
 		else if (op == OP_CALL) {
 			int st = opcodes[i++];
 			printf("  call DWORD PTR [esp+%d]\n", st);
+		}
+		else if (op == OP_RETURN) {
+			printf("  pop eax\n");
+			printf("  jmp SHORT __exit_%s\n", funcname);
+		}
+		else if (op == OP_JMPZ) {
+			printf("  pop eax\n");
+			printf("  test eax, eax\n");
+
+			int label = opcodes[i++];
+			printf("  je SHORT __%s_%d\n", funcname, label);
+		}
+		else if (op == OP_LABEL) {
+			printf("\n__%s_%d:\n", funcname, i-1);
 		}
 	}
 }
