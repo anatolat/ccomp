@@ -296,6 +296,7 @@ void next_token() {
 // parser
 void parse_assignment_expr();
 void parse_stmts(int);
+void parse_declaration(bool);
 
 
 bool check_token(int expected) {
@@ -425,11 +426,9 @@ void parse_func_params() {
 	next_token();
 	while (token != T_RPAREN && token != T_EOF) {
 
-		check_token(T_TYPEID);
-		parse_token(T_ID);
-		add_param(token_id);
+		parse_declaration(true);
 
-		if (!try_parse_token(T_COMMA)) {
+		if (token != T_COMMA) {
 			break;
 		}
 
@@ -476,7 +475,6 @@ void parse_direct_declarator(char* id, bool* func) {
 			}
 			check_token(T_RBRACKET);
 			next_token();
-			
 		}
 		else if (token == T_LPAREN) {
 			*func = true;
@@ -489,7 +487,7 @@ void parse_direct_declarator(char* id, bool* func) {
 }
 
 // declarator : pointer? direct_declarator
-void parse_declarator() {
+void parse_declarator(bool param) {
 	// pointer
 	while (token == T_MUL) {
 		next_token();
@@ -507,21 +505,26 @@ void parse_declarator() {
 		end_func();
 	}
 	else {
-		add_local(id);
-		check_token(T_SEMI);
+		if (param) {
+			add_param(id);
+		}
+		else {
+			add_local(id);
+			check_token(T_SEMI);
+		}
 	}
 }
 
-void parse_declaration() {
+void parse_declaration(bool param) {
 	parse_decl_specs();
-	parse_declarator();
+	parse_declarator(param);
 }
 
 void parse_stmt() {
 	// func_decl: TYPEID ID () {}
 	// var_decl: TYPEID ID;
 	if (token == T_TYPEID) {
-		parse_declaration();
+		parse_declaration(false);
 		return;
 	}
 

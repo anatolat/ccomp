@@ -19,3 +19,8 @@ void test0() {
 void test3() {
 	printf("%d %d %d\n", 1, 2, 3);
 }
+
+char* testptr(char* ptr) {
+	printf(ptr);
+	return ptr;
+}
