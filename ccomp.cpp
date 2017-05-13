@@ -161,7 +161,14 @@ int next_token_helper() {
 	do {
 		ch = fgetc(f);
 
-		if (ch == '/') {
+		// ignore preprocessor directives
+		if (ch == '#') {
+			while (ch != '\n' && ch != EOF) {
+				ch = fgetc(f);
+			}
+		}
+		// comments
+		else if (ch == '/') {
 			ch = fgetc(f);
 			if (ch == '/') {
 				while (ch != '\n' && ch != EOF) {

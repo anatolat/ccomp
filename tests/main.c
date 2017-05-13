@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 // Recursive function
 int fact(int n) {
 	if (n < 2) return 1;
