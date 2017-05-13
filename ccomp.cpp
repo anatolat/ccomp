@@ -36,6 +36,7 @@ enum {
 	, T_RETURN
 	, T_IF
 	, T_WHILE
+	, T_DO
 };
 
 
@@ -156,6 +157,7 @@ const char* tok2str(int tok) {
 	case T_RETURN: return "RETURN";
 	case T_IF: return "IF";
 	case T_WHILE: return "WHILE";
+	case T_DO: return "DO";
 	}
 	return "XXX";
 }
@@ -243,6 +245,9 @@ int next_token_helper() {
 		}
 		else if (!strcmp(token_id, "while")) {
 			t = T_WHILE;
+		}
+		else if (!strcmp(token_id, "do")) {
+			t = T_DO;
 		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
@@ -613,6 +618,36 @@ void parse_stmt() {
 
 		next_token();
 		parse_stmt();
+
+		emit(OP_JMP);
+		emit(startLabel);
+
+		emit(OP_LABEL);
+		emit(endLabel);
+
+		return;
+	}
+
+	if (token == T_DO) {
+		int startLabel = nlabels++;
+		int endLabel = nlabels++;
+		emit(OP_LABEL);
+		emit(startLabel);
+
+		next_token();
+		parse_stmt();
+
+		parse_token(T_WHILE);
+
+		parse_token(T_LPAREN);
+
+		next_token();
+		parse_assignment_expr();
+
+		check_token(T_RPAREN);
+
+		emit(OP_JMPZ);
+		emit(endLabel);
 
 		emit(OP_JMP);
 		emit(startLabel);
