@@ -1,6 +1,12 @@
-int expr(int a, int b) {
-	int c;
-	c = a < b;
 
-	return c;
+
+int fact(int n) {
+	if (n < 2) return 1;
+
+	return n *  fact(n - 1);
 }
+
+int twoParams(int a, int b) {
+	return a - b;
+}
+

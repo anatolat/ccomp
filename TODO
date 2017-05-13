@@ -1,11 +1,9 @@
-
- - Expressions & priority
- + Support loading variable values
- + Parameters
- + Return statement
- - Comparison 
- - Arithmetic operators
-
+ - types:
+    - char
+    - pointers
+    - arrays
+ - reverse parameters
+ - operator priority
 
 
  - Call with more than one variable

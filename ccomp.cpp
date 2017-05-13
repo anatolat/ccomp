@@ -43,8 +43,10 @@ int token;
 char token_id[256];
 int token_num;
 
-int ntypes = 1;
+int ntypes = 3 ;
 char* types[256] = {
+	"void",
+	"char",
 	"int"
 };
 
@@ -372,33 +374,93 @@ void parse_func_params() {
 	check_token(T_RPAREN);
 }
 
+bool parse_decl_spec() {
+	switch (token) {
+	case T_TYPEID: 
+		return true;
+	}
+	return false;
+}
+
+
+// declaration_specifiers
+void parse_decl_specs() {
+	parse_decl_spec();
+
+	next_token();
+}
+
+/*
+directDeclarator
+:   Identifier
+|   '(' declarator ')'
+|   directDeclarator '[' typeQualifierList? assignmentExpression? ']'
+|   directDeclarator '[' 'static' typeQualifierList? assignmentExpression ']'
+|   directDeclarator '[' typeQualifierList 'static' assignmentExpression ']'
+|   directDeclarator '[' typeQualifierList? '*' ']'
+|   directDeclarator '(' parameterTypeList ')'
+| directDeclarator '(' identifierList? ')'
+ */
+void parse_direct_declarator(char* id, bool* func) {
+	*func = false;
+	if (!check_token(T_ID)) return;
+
+	strcpy(id, token_id);
+	next_token();
+	
+	while (true) {
+		if (token == T_LBRACKET) {
+			while (token != T_RBRACKET && token != T_EOF) {
+				next_token();
+			}
+			check_token(T_RBRACKET);
+			next_token();
+			
+		}
+		else if (token == T_LPAREN) {
+			*func = true;
+			start_func(id);
+
+			parse_func_params();
+		}
+		else break;
+	}
+}
+
+// declarator : pointer? direct_declarator
+void parse_declarator() {
+	// pointer
+	while (token == T_MUL) {
+		next_token();
+	}
+
+	char id[256];
+	bool func;
+
+	parse_direct_declarator(id, &func);
+	if (func) {
+		parse_token(T_LCURLY);
+
+
+		parse_stmts(T_RCURLY);
+		end_func();
+	}
+	else {
+		add_local(id);
+		check_token(T_SEMI);
+	}
+}
+
+void parse_declaration() {
+	parse_decl_specs();
+	parse_declarator();
+}
 
 void parse_stmt() {
 	// func_decl: TYPEID ID () {}
 	// var_decl: TYPEID ID;
 	if (token == T_TYPEID) {
-		char type[256], id[256];
-
-		strcpy(type, token_id);
-
-		parse_token(T_ID);
-		strcpy(id, token_id);
-
-		if (try_parse_token(T_LPAREN)) {
-			start_func(id);
-
-			parse_func_params();
-
-			parse_token(T_LCURLY);
-			
-
-			parse_stmts(T_RCURLY);
-			end_func();
-		}
-		else {
-			add_local(id);
-			check_token(T_SEMI);
-		}
+		parse_declaration();
 		return;
 	}
 
@@ -449,6 +511,7 @@ void parse_stmts(int terminator) {
 			break;
 		}
 
+		//parse_declaration();
 		parse_stmt();
 	}
 }
@@ -683,6 +746,7 @@ void gen_asm() {
 // 
 
 int main(int argc, char** argv) {
+
 	if (argc != 2) return -1;
 
 
