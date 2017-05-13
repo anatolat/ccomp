@@ -24,3 +24,5 @@ char* testptr(char* ptr) {
 	printf(ptr);
 	return ptr;
 }
+
+int fwddecl(char* ptr);

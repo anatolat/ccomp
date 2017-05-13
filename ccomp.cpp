@@ -47,7 +47,7 @@ int ntypes = 3 ;
 char* types[256] = {
 	"void",
 	"char",
-	"int"
+	"int",
 };
 
 // cpool
@@ -108,7 +108,8 @@ int get_local(const char* s);
 int get_param(const char* s);
 int get_extern(const char* s);
 
-void start_func(const char* s);
+void start_func_decl(const char* s);
+void start_func_body();
 void end_func();
 // end
 
@@ -478,7 +479,7 @@ void parse_direct_declarator(char* id, bool* func) {
 		}
 		else if (token == T_LPAREN) {
 			*func = true;
-			start_func(id);
+			start_func_decl(id);
 
 			parse_func_params();
 		}
@@ -498,11 +499,16 @@ void parse_declarator(bool param) {
 
 	parse_direct_declarator(id, &func);
 	if (func) {
-		parse_token(T_LCURLY);
+		if (try_parse_token(T_LCURLY)) {
+			start_func_body();
 
+			parse_stmts(T_RCURLY);
+			end_func();
+		}
+		else {
+			check_token(T_SEMI);
+		}
 
-		parse_stmts(T_RCURLY);
-		end_func();
 	}
 	else {
 		if (param) {
@@ -616,13 +622,16 @@ int emit(int op) {
 	return nopcodes - 1;
 }
 
-void start_func(const char* s) {
+void start_func_decl(const char* s) {
 	strcpy(funcname, s);
 
 	add_extern(s);
 
-	gen_func_prologue(funcname);
 	nparams = 0;
+}
+
+void start_func_body() {
+	gen_func_prologue(funcname);
 	nlocals = 0;
 }
 
@@ -847,6 +856,7 @@ int main(int argc, char** argv) {
 	if (argc != 2) return -1;
 
 
+	add_extern("fgetc");
 	add_extern("printf");
 	add_extern("exit");
 
