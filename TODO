@@ -1,11 +1,8 @@
- - types:
-    - char
-    - pointers
-    - arrays
- - reverse parameters
  - operator priority
-
-
- - Call with more than one variable
  - Clean up stack after calling function
  - Allocate stack with required size
+ - global variables
+ - support variables of different size (char, short, etc ...)
+ - variables initialization
+ - array initialization
+ - for loops

@@ -6,7 +6,13 @@ int fact(int n) {
 	return n *  fact(n - 1);
 }
 
-int twoParams(int a, int b) {
-	return a - b;
+
+void helloWorld() { printf("helloWorld\n"); }
+
+void test0() {
+	helloWorld();	
 }
 
+void test3() {
+	printf("%d %d %d\n", 1, 2, 3);
+}

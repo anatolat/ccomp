@@ -59,6 +59,9 @@ int add_const(const char*);
 // end cpool
 
 // codegen
+// Call format:
+//    OP_CALL header_pointer <...>
+//    header: param_count param_offset0 param_offset1 ...
 enum {
 	OP_LOAD
 	, OP_ADDR
@@ -112,7 +115,7 @@ void end_func();
 // asmgen
 void gen_func_prologue(const char* name);
 void gen_func_epilogue(const char* name);
-void gen_code();
+void gen_code(int from, int end);
 // end
 
 
@@ -317,14 +320,31 @@ void parse_postfix_expr() {
 	if (token == T_LPAREN) {
 		//printf("(");
 		next_token();
-		parse_assignment_expr();
+
+		emit(OP_CALL);
+		int sizes[256] = {}; // size of the code generated for each parameter
+		int callHeader = emit(0);
+
+		int paramCount = 0;
+		while (token != T_RPAREN && token != T_EOF) {
+			sizes[paramCount++] = nopcodes;
+
+			parse_assignment_expr();
+
+			if (token == T_COMMA) {
+				next_token();
+				continue;
+			}
+		}
 
 		//printf(")");
 		check_token(T_RPAREN);
 		next_token();
 
-		emit(OP_CALL);
-		emit(4); // size of the pushed parameters
+		opcodes[callHeader] = emit(paramCount);
+		for (int i = 0; i < paramCount; ++i) {
+			emit(sizes[i]);
+		}
 	}
 
 }
@@ -374,12 +394,8 @@ void parse_func_params() {
 	check_token(T_RPAREN);
 }
 
-bool parse_decl_spec() {
-	switch (token) {
-	case T_TYPEID: 
-		return true;
-	}
-	return false;
+void parse_decl_spec() {
+	check_token(T_TYPEID);
 }
 
 
@@ -563,7 +579,7 @@ void start_func(const char* s) {
 }
 
 void end_func() {
-	gen_code();
+	gen_code(0, nopcodes);
 	nopcodes = 0;
 
 	gen_func_epilogue(funcname);
@@ -638,8 +654,8 @@ void gen_cpool() {
 	printf("\n");
 }
 
-void gen_code() {
-	for (int i = 0; i < nopcodes; ) {
+void gen_code(int from, int end) {
+	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
 		if (op == OP_PUSH) {
 			int valueType = opcodes[i++];
@@ -680,7 +696,21 @@ void gen_code() {
 			printf("  mov  DWORD PTR [ecx], eax\n");
 		}
 		else if (op == OP_CALL) {
-			int st = opcodes[i++];
+			int headerRef = opcodes[i];
+			int paramCount = opcodes[headerRef];
+
+			i = headerRef + paramCount + 1;
+
+			int paramEnd = headerRef;
+			for (int param = paramCount - 1; param >= 0; --param) {
+				int paramOffset = opcodes[headerRef + param + 1];
+				gen_code(paramOffset, paramEnd);
+
+				paramEnd = paramOffset;
+			}
+
+			// FIXME: support different parameter sizes
+			int st = paramCount * 4;
 			printf("  call DWORD PTR [esp+%d]\n", st);
 			printf("  add esp, %d\n", st+4); // size of paremters + pointer to function
 			printf("  push eax\n");
