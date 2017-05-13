@@ -283,6 +283,22 @@ int next_token_helper() {
 		return T_STR_LIT;
 	}
 
+	if (ch == '\'') {
+		// TODO
+		ch = fgetc(f);
+		if (ch == '\\') {
+			ch = fgetc(f);
+
+			if (ch == 'n') ch = '\n';
+			else if (ch == 'r') ch = '\r';
+			else if (ch == 't') ch = '\t';
+		}
+		token_num = ch;
+
+		fgetc(f);
+		return T_CHAR_LIT;
+	}
+
 
 	printf("Invalid token %c\n", ch);
 	return T_EOF;
@@ -332,6 +348,14 @@ void parse_primary_expr() {
 		emit(OP_PUSH);
 		emit(VAL_STR);
 		emit(cid);
+
+		next_token();
+		return;
+	}
+	if (token == T_CHAR_LIT) {
+		emit(OP_PUSH);
+		emit(VAL_INT);
+		emit(token_num);
 
 		next_token();
 		return;
