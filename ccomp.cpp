@@ -84,6 +84,8 @@ enum {
 	VAL_INT,
 	VAL_LOCAL,
 	VAL_LOCAL_ADDR,
+	VAL_GLOB,
+	VAL_GLOB_ADDR,
 	VAL_EXTERN
 };
 
@@ -103,15 +105,20 @@ char locals[256][64];
 int nlabels;
 
 int nexterns;
-char externs[256][24];
+char externs[256][64];
+
+int nglobals;
+char globals[256][64];
 
 int add_extern(const char* s);
 int add_param(const char* s);
 int add_local(const char* s);
+int add_global(const char* s);
 
 int get_local(const char* s);
 int get_param(const char* s);
 int get_extern(const char* s);
+int get_global(const char* s);
 
 void start_func_decl(const char* s);
 void start_func_body();
@@ -390,6 +397,11 @@ void parse_primary_expr() {
 			emit(VAL_EXTERN);
 			emit(id);
 		}
+		else if ((id = get_global(token_id)) != -1) {
+			emit(OP_PUSH);
+			emit(VAL_GLOB);
+			emit(id);
+		}
 		else {
 			printf("Unknown identifier %s\n", token_id);
 		}
@@ -443,6 +455,9 @@ void parse_assignment_expr() {
 
 		if (opcodes[lhs] == OP_PUSH && opcodes[lhs + 1] == VAL_LOCAL) {
 			opcodes[lhs + 1] = VAL_LOCAL_ADDR;
+		}
+		else if (opcodes[lhs] == OP_PUSH && opcodes[lhs + 1] == VAL_GLOB) {
+			opcodes[lhs + 1] = VAL_GLOB_ADDR;
 		}
 
 		emit(OP_SAVE);
@@ -552,7 +567,12 @@ void parse_declarator(bool param) {
 			add_param(id);
 		}
 		else {
-			add_local(id);
+			if (funcname[0]) {
+				add_local(id);
+			}
+			else {
+				add_global(id);
+			}
 			check_token(T_SEMI);
 		}
 	}
@@ -765,6 +785,18 @@ int get_extern(const char* s) {
 	return -1;
 }
 
+int add_global(const char* s) {
+	strcpy(globals[nglobals++], s);
+	return nglobals - 1;
+}
+
+int get_global(const char* s) {
+	for (int i = 0; i < nglobals; ++i) {
+		if (!strcmp(globals[i], s)) return i;
+	}
+	return -1;
+}
+
 
 // end codegen
 
@@ -818,6 +850,19 @@ void gen_cpool() {
 	printf("\n");
 }
 
+void gen_globals() {
+	// public section
+	for (int i = 0; i < nglobals; ++i) {
+		printf("public %s\n", globals[i]);
+	}
+
+	printf(".data\n");
+	for (int i = 0; i < nglobals; ++i) {
+		printf("%s dd 0\n", globals[i]);
+	}
+	printf("\n");
+}
+
 void gen_code(int from, int end) {
 	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
@@ -848,10 +893,18 @@ void gen_code(int from, int end) {
 					printf("  lea eax, DWORD PTR [ebp]%d \n", value);
 				}
 
-				printf("  push eax \n", value);
+				printf("  push eax\n", value);
 			}
 			else if (valueType == VAL_EXTERN) {
 				printf("  push OFFSET %s\n", externs[value]);
+			}
+			else if (valueType == VAL_GLOB) {
+				printf("  mov eax, DWORD PTR %s\n", globals[value]);
+				printf("  push eax\n", value);
+			}
+			else if (valueType == VAL_GLOB_ADDR) {
+				printf("  lea eax, DWORD PTR %s\n", globals[value]);
+				printf("  push eax\n", value);
 			}
 		}
 		else if (op == OP_SAVE) {
@@ -937,6 +990,7 @@ void gen_asm() {
 
 	parse_stmts(T_EOF);
 
+	gen_globals();
 	gen_cpool();
 
 	printf("end\n");
