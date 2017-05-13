@@ -160,6 +160,33 @@ int next_token_helper() {
 
 	do {
 		ch = fgetc(f);
+
+		if (ch == '/') {
+			ch = fgetc(f);
+			if (ch == '/') {
+				while (ch != '\n' && ch != EOF) {
+					ch = fgetc(f);
+				}
+			}
+			else if (ch == '*') {
+				while (ch != EOF) {
+					ch = fgetc(f);
+					if (ch == '*') {
+						ch = fgetc(f);
+						if (ch == '/') {
+							ch = fgetc(f);
+							break;
+						}
+
+						ungetc(ch, f);
+					}
+				}
+			}
+			else {
+				ungetc(ch, f);
+			}
+		}
+
 	} while (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r');
 
 	token_id[0] = 0;
@@ -247,6 +274,7 @@ int next_token_helper() {
 		token_id[i] = 0;
 		return T_STR_LIT;
 	}
+
 
 	printf("Invalid token %c\n", ch);
 	return T_EOF;
