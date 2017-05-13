@@ -35,6 +35,7 @@ enum {
 	// keywords
 	, T_RETURN
 	, T_IF
+	, T_WHILE
 };
 
 
@@ -69,6 +70,7 @@ enum {
 	, OP_SAVE
 	, OP_CALL
 	, OP_RETURN
+	, OP_JMP
 	, OP_JMPZ
 	, OP_LABEL
 	, OP_ADD
@@ -96,6 +98,8 @@ char params[256][64];
 
 int nlocals;
 char locals[256][64];
+
+int nlabels;
 
 int nexterns;
 char externs[256][24];
@@ -151,6 +155,7 @@ const char* tok2str(int tok) {
 
 	case T_RETURN: return "RETURN";
 	case T_IF: return "IF";
+	case T_WHILE: return "WHILE";
 	}
 	return "XXX";
 }
@@ -235,6 +240,9 @@ int next_token_helper() {
 		}
 		else if (!strcmp(token_id, "if")) {
 			t = T_IF;
+		}
+		else if (!strcmp(token_id, "while")) {
+			t = T_WHILE;
 		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
@@ -568,7 +576,6 @@ void parse_stmt() {
 	}
 
 	if (token == T_IF) {
-		
 		parse_token(T_LPAREN);
 
 		next_token();
@@ -577,17 +584,53 @@ void parse_stmt() {
 		check_token(T_RPAREN);
 
 		emit(OP_JMPZ);
-		int label = emit(0);
+		int label = nlabels++;
+		emit(label);
 
 		next_token();
 		parse_stmt();
 
-		opcodes[label] = emit(OP_LABEL);
+		emit(OP_LABEL);
+		emit(label);
+		return;
+	}
+
+	if (token == T_WHILE) {
+		int startLabel = nlabels++;
+		int endLabel = nlabels++;
+		emit(OP_LABEL);
+		emit(startLabel);
+
+		parse_token(T_LPAREN);
+
+		next_token();
+		parse_assignment_expr();
+
+		check_token(T_RPAREN);
+		
+		emit(OP_JMPZ);
+		emit(endLabel);
+
+		next_token();
+		parse_stmt();
+
+		emit(OP_JMP);
+		emit(startLabel);
+
+		emit(OP_LABEL);
+		emit(endLabel);
+
 		return;
 	}
 
 	// ;
 	if (token == T_SEMI) return;
+
+	//
+	if (token == T_LCURLY) {
+		parse_stmts(T_RCURLY);
+		return;
+	}
 
 	parse_assignment_expr();
 	//printf(";\n");
@@ -606,21 +649,6 @@ void parse_stmts(int terminator) {
 		}
 
 		//parse_declaration();
-		parse_stmt();
-	}
-}
-
-void parse_stmts() {
-	// prog = stmt* eof
-	while (1) {
-		next_token();
-		if (token == T_RCURLY) break;
-
-		if (token == T_EOF) {
-			check_token(T_RCURLY);
-			break;
-		}
-
 		parse_stmt();
 	}
 }
@@ -657,6 +685,7 @@ void start_func_decl(const char* s) {
 void start_func_body() {
 	gen_func_prologue(funcname);
 	nlocals = 0;
+	nlabels = 0;
 }
 
 void end_func() {
@@ -819,6 +848,10 @@ void gen_code(int from, int end) {
 			printf("  pop eax\n");
 			printf("  jmp SHORT __exit_%s\n", funcname);
 		}
+		else if (op == OP_JMP) {
+			int label = opcodes[i++];
+			printf("  jmp SHORT __%s_%d\n", funcname, label);
+		}
 		else if (op == OP_JMPZ) {
 			printf("  pop eax\n");
 			printf("  test eax, eax\n");
@@ -827,7 +860,8 @@ void gen_code(int from, int end) {
 			printf("  je SHORT __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_LABEL) {
-			printf("\n__%s_%d:\n", funcname, i-1);
+			int id = opcodes[i++];
+			printf("\n__%s_%d:\n", funcname, id);
 		}
 		else if (op == OP_ADD) {
 			printf("  pop eax\n");
