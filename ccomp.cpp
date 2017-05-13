@@ -230,6 +230,16 @@ int next_token_helper() {
 		int i = 0;
 		ch = fgetc(f);
 		while (ch != '"' && ch != EOF) {
+			if (ch == '\\') {
+				ch = fgetc(f);
+
+				if (ch == EOF) continue;
+
+				if (ch == 'n') ch = '\n';
+				else if (ch == 'r') ch = '\r';
+				else if (ch == 't') ch = '\t';
+			}
+
 			token_id[i++] = ch;
 			ch = fgetc(f);
 		}
@@ -647,7 +657,26 @@ void gen_cpool() {
 
 	for (int i = 0; i < cpool_size; ) {
 		int size = strlen(&cpool[i]) + 1;
-		printf("__str_%d db '%s', 0h\n", i, &cpool[i]);
+		printf("__str_%d db ", i);
+
+		bool quoted = false;
+		for (int j = 0; j < size; ++j) {
+			char ch = cpool[i + j];
+			if (ch < ' ') {
+				if (quoted) printf("', ", ch);
+				else if (j != 0) printf(", ");
+				printf("%02XH", ch);
+				quoted = false;
+			}
+			else {
+				if (j != 0 && !quoted) printf(", '");
+				else if (!quoted) printf("'");
+				printf("%c", ch);
+				quoted = true;
+			}
+		}
+
+		printf("\n");
 
 		i += size;
 	}

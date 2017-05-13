@@ -7,7 +7,7 @@ int fact(int n) {
 }
 
 
-void helloWorld() { printf("helloWorld\n"); }
+void helloWorld() { printf("hello\tWorld\n"); }
 
 void test0() {
 	helloWorld();	
