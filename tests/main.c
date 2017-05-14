@@ -1,8 +1,5 @@
 #include <stdio.h>
 
-int a;
-
-void looptest() {
-	a = 2;
-	printf("global %d\n", a);
+void test(int a, int b) {
+	printf("%d %d", a == b);
 }

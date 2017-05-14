@@ -24,6 +24,12 @@ enum {
 	, T_MUL
 	, T_LESS
 	, T_EQ
+	, T_OR
+	, T_AND
+	, T_BIT_OR
+	, T_BIT_AND
+
+	, T_NOT
 
 	, T_LPAREN // (
 	, T_RPAREN // )
@@ -35,6 +41,7 @@ enum {
 	// keywords
 	, T_RETURN
 	, T_IF
+	, T_ELSE
 	, T_WHILE
 	, T_DO
 };
@@ -78,6 +85,7 @@ enum {
 	, OP_SUB
 	, OP_MUL
 	, OP_LESS
+	, OP_EQ
 };
 enum {
 	VAL_STR,
@@ -153,6 +161,11 @@ const char* tok2str(int tok) {
 	case T_SUB: return "SUB";
 	case T_MUL: return "MUL";
 	case T_LESS: return "LESS";
+	case T_OR: return "OR";
+	case T_AND: return "AND";
+	case T_BIT_OR: return "BIT_OR";
+	case T_BIT_AND: return "BIT_AND";
+	case T_NOT: return "NOT";
 
 	case T_LPAREN: return "LPAREN";
 	case T_RPAREN: return "RPAREN";
@@ -163,6 +176,7 @@ const char* tok2str(int tok) {
 
 	case T_RETURN: return "RETURN";
 	case T_IF: return "IF";
+	case T_ELSE: return "ELSE";
 	case T_WHILE: return "WHILE";
 	case T_DO: return "DO";
 	}
@@ -219,11 +233,35 @@ int next_token_helper() {
 	if (ch == '.') return T_PERIOD;
 	if (ch == ':') return T_COLON;
 
-	if (ch == '=') return T_ASSIGNMENT;
+	if (ch == '=') {
+		ch = fgetc(f);
+		if (ch == '=') return T_EQ;
+
+		ungetc(ch, f);
+		return T_ASSIGNMENT;
+	}
 	if (ch == '+') return T_ADD;
 	if (ch == '-') return T_SUB;
 	if (ch == '*') return T_MUL;
 	if (ch == '<') return T_LESS;
+
+	if (ch == '|') {
+		ch = fgetc(f);
+		if (ch == '|') return T_OR;
+
+		ungetc(ch, f);
+		return T_BIT_OR;
+	}
+
+	if (ch == '&') {
+		ch = fgetc(f);
+		if (ch == '&') return T_AND;
+
+		ungetc(ch, f);
+		return T_BIT_AND;
+	}
+
+	if (ch == '!') return T_NOT;
 
 	if (ch == '(') return T_LPAREN;
 	if (ch == ')') return T_RPAREN;
@@ -255,6 +293,9 @@ int next_token_helper() {
 		}
 		else if (!strcmp(token_id, "do")) {
 			t = T_DO;
+		}
+		else if (!strcmp(token_id, "else")) {
+			t = T_ELSE;
 		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
@@ -463,7 +504,7 @@ void parse_assignment_expr() {
 		emit(OP_SAVE);
 	}
 
-	if (token == T_ADD || token == T_SUB || token == T_MUL || token == T_LESS) {
+	if (token == T_ADD || token == T_SUB || token == T_MUL || token == T_LESS || token == T_EQ) {
 		int op = token;
 		next_token();
 		parse_postfix_expr();
@@ -472,6 +513,7 @@ void parse_assignment_expr() {
 		else if (op == T_SUB) emit(OP_SUB);
 		else if (op == T_MUL) emit(OP_MUL);
 		else if (op == T_LESS) emit(OP_LESS);
+		else if (op == T_EQ) emit(OP_EQ);
 	}
 }
 
@@ -552,6 +594,8 @@ void parse_declarator(bool param) {
 	parse_direct_declarator(id, &func);
 	if (func) {
 		if (try_parse_token(T_LCURLY)) {
+			next_token();
+
 			start_func_body();
 
 			parse_stmts(T_RCURLY);
@@ -559,6 +603,7 @@ void parse_declarator(bool param) {
 		}
 		else {
 			check_token(T_SEMI);
+			next_token();
 		}
 
 	}
@@ -574,6 +619,7 @@ void parse_declarator(bool param) {
 				add_global(id);
 			}
 			check_token(T_SEMI);
+			next_token();
 		}
 	}
 }
@@ -595,6 +641,7 @@ void parse_stmt() {
 		next_token();
 		parse_assignment_expr();
 		check_token(T_SEMI);
+		next_token();
 
 		emit(OP_RETURN);
 		return;
@@ -609,14 +656,21 @@ void parse_stmt() {
 		check_token(T_RPAREN);
 
 		emit(OP_JMPZ);
-		int label = nlabels++;
-		emit(label);
+		int endLabel = nlabels++;
+		emit(endLabel);
 
 		next_token();
 		parse_stmt();
 
 		emit(OP_LABEL);
-		emit(label);
+		emit(endLabel);
+
+		if (token == T_ELSE) {
+			next_token();
+
+			parse_stmt();
+		} 
+
 		return;
 	}
 
@@ -679,10 +733,15 @@ void parse_stmt() {
 	}
 
 	// ;
-	if (token == T_SEMI) return;
+	if (token == T_SEMI) {
+		next_token();
+		return;
+	}
 
 	//
 	if (token == T_LCURLY) {
+		next_token();
+
 		parse_stmts(T_RCURLY);
 		return;
 	}
@@ -690,20 +749,22 @@ void parse_stmt() {
 	parse_assignment_expr();
 	//printf(";\n");
 	check_token(T_SEMI);
+	next_token();
 }
 
 void parse_stmts(int terminator) {
 	// prog = stmt* eof
 	while (1) {
-		next_token();
-		if (token == terminator) break;
+		if (token == terminator) {
+			next_token();
+			break;
+		}
 
 		if (token == T_EOF) {
 			check_token(terminator);
 			break;
 		}
 
-		//parse_declaration();
 		parse_stmt();
 	}
 }
@@ -863,6 +924,16 @@ void gen_globals() {
 	printf("\n");
 }
 
+void emit_asm_cmp(const char* op) {
+	printf("  pop eax\n");
+	printf("  pop ecx\n");
+	printf("  cmp ecx, eax\n");
+	printf("  %s al\n", op);
+	printf("  cbw\n");
+	printf("  cwde\n");
+	printf("  push eax\n");
+}
+
 void gen_code(int from, int end) {
 	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
@@ -970,13 +1041,10 @@ void gen_code(int from, int end) {
 			printf("  push ecx\n");
 		}
 		else if (op == OP_LESS) {
-			printf("  pop eax\n");
-			printf("  pop ecx\n");
-			printf("  cmp ecx, eax\n");
-			printf("  setl al\n");
-			printf("  cbw\n");
-			printf("  cwde\n");
-			printf("  push eax\n");
+			emit_asm_cmp("setl");
+		}
+		else if (op == OP_EQ) {
+			emit_asm_cmp("sete");
 		}
 	}
 }
@@ -988,6 +1056,7 @@ void gen_asm() {
 
 	printf(".code\n\n");
 
+	next_token();
 	parse_stmts(T_EOF);
 
 	gen_globals();
