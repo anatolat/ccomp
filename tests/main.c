@@ -14,5 +14,5 @@ int fb(int b) {
 }
 
 void testi(int a, int b) {
-	printf("result: %d\n", fa(a) || fb(b));
+	printf("result: %d\n", fa(a) && fb(b));
 }

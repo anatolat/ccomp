@@ -656,11 +656,17 @@ void emit_or_jump(int label) {
 	emit(label);
 }
 
+void emit_and_jump(int label) {
+	emit(OP_JMPZ);
+	emit(label);
+}
+
 void parse_expr(int min_prec) {
 	int lhs = nopcodes;
 	parse_unary_expr();
 
 	int or_label = -1;
+	int and_label = -1;
 
 	while (true) {
 		int prec = op_prec(token);
@@ -673,6 +679,10 @@ void parse_expr(int min_prec) {
 			or_label = nlabels++;
 			emit_or_jump(or_label);
 		}
+		else if (op == T_AND) {
+			and_label = nlabels++;
+			emit_and_jump(and_label);
+		}
 
 		parse_expr(prec == 1 ? prec : prec + 1);
 
@@ -680,7 +690,7 @@ void parse_expr(int min_prec) {
 			convert_to_addr(lhs);
 			emit(OP_SAVE);
 		}
-		else if (op == T_OR) {
+		else if (op == T_OR || op == T_AND) {
 			// do nothing
 		}
 		else if (op == T_ADD) emit(OP_ADD);
@@ -713,6 +723,27 @@ void parse_expr(int min_prec) {
 		emit(OP_PUSH);
 		emit(VAL_INT);
 		emit(1);
+
+		emit(OP_LABEL);
+		emit(end);
+	}
+
+	if (and_label != -1) {
+		emit_and_jump(and_label);
+		emit(OP_PUSH);
+		emit(VAL_INT);
+		emit(1);
+
+		int end = nlabels++;
+		emit(OP_JMP);
+		emit(end);
+
+		emit(OP_LABEL);
+		emit(and_label);
+
+		emit(OP_PUSH);
+		emit(VAL_INT);
+		emit(0);
 
 		emit(OP_LABEL);
 		emit(end);
