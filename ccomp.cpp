@@ -19,6 +19,7 @@ enum {
 	, T_COLON
 
 	, T_ASSIGNMENT
+	, T_ASSIGNMENT_ADD
 	, T_ADD
 	, T_SUB
 	, T_MUL
@@ -31,6 +32,8 @@ enum {
 	, T_BIT_AND
 
 	, T_NOT
+	, T_INC
+	, T_DEC
 
 	, T_LPAREN // (
 	, T_RPAREN // )
@@ -89,6 +92,10 @@ enum {
 	, OP_LESS
 	, OP_EQ
 	, OP_FOR
+	, OP_INC
+	, OP_DEC
+	, OP_INC_POST
+	, OP_DEC_POST
 };
 enum {
 	VAL_STR,
@@ -159,6 +166,7 @@ const char* tok2str(int tok) {
 	case T_COLON: return "COLON";
 
 	case T_ASSIGNMENT: return "ASSIGNMENT";
+	case T_ASSIGNMENT_ADD: return "ASSIGNMENT_ADD";
 	case T_EQ: return "EQ";
 	case T_ADD: return "ADD";
 	case T_SUB: return "SUB";
@@ -170,6 +178,8 @@ const char* tok2str(int tok) {
 	case T_BIT_OR: return "BIT_OR";
 	case T_BIT_AND: return "BIT_AND";
 	case T_NOT: return "NOT";
+	case T_INC: return "INC";
+	case T_DEC: return "DEC";
 
 	case T_LPAREN: return "LPAREN";
 	case T_RPAREN: return "RPAREN";
@@ -245,8 +255,21 @@ int next_token_helper() {
 		ungetc(ch, f);
 		return T_ASSIGNMENT;
 	}
-	if (ch == '+') return T_ADD;
-	if (ch == '-') return T_SUB;
+	if (ch == '+') {
+		ch = fgetc(f);
+		if (ch == '+') return T_INC;
+		if (ch == '=') return T_ASSIGNMENT_ADD;
+
+		ungetc(ch, f);
+		return T_ADD;
+	}
+	if (ch == '-') {
+		ch = fgetc(f);
+		if (ch == '-') return T_DEC;
+
+		ungetc(ch, f);
+		return T_SUB;
+	}
 	if (ch == '*') return T_MUL;
 	if (ch == '<') return T_LESS;
 	if (ch == '>') return T_GREATER;
@@ -468,11 +491,20 @@ void parse_primary_expr() {
 	next_token();
 }
 
+void convert_to_addr(int code) {
+	if (opcodes[code] == OP_PUSH && opcodes[code + 1] == VAL_LOCAL) {
+		opcodes[code + 1] = VAL_LOCAL_ADDR;
+	}
+	else if (opcodes[code] == OP_PUSH && opcodes[code + 1] == VAL_GLOB) {
+		opcodes[code + 1] = VAL_GLOB_ADDR;
+	}
+}
+
 void parse_postfix_expr() {
+	int code = nopcodes;
 	parse_primary_expr();
 
 	if (token == T_LPAREN) {
-		//printf("(");
 		next_token();
 
 		emit(OP_CALL);
@@ -491,7 +523,6 @@ void parse_postfix_expr() {
 			}
 		}
 
-		//printf(")");
 		check_token(T_RPAREN);
 		next_token();
 
@@ -499,25 +530,44 @@ void parse_postfix_expr() {
 		for (int i = 0; i < paramCount; ++i) {
 			emit(sizes[i]);
 		}
+		return;
 	}
 
+	if (token == T_INC || token == T_DEC) {
+		bool inc = token == T_INC;
+		next_token();
+
+		convert_to_addr(code);
+		emit(inc ? OP_INC_POST : OP_DEC_POST);
+	}
+}
+
+void parse_unary_expr() {
+	if (token == T_INC || token == T_DEC) {
+		bool inc = token == T_INC;
+		next_token();
+		
+		int code = nopcodes;
+		parse_unary_expr();
+
+		convert_to_addr(code);
+
+		emit(inc ? OP_INC : OP_DEC);
+		return;
+	}
+	
+	parse_postfix_expr();
 }
 
 void parse_assignment_expr() {
 	int lhs = nopcodes;
-	parse_postfix_expr();
+	parse_unary_expr();
 
 	if (token == T_ASSIGNMENT) {
 		next_token(); 
 		parse_assignment_expr();
 
-		if (opcodes[lhs] == OP_PUSH && opcodes[lhs + 1] == VAL_LOCAL) {
-			opcodes[lhs + 1] = VAL_LOCAL_ADDR;
-		}
-		else if (opcodes[lhs] == OP_PUSH && opcodes[lhs + 1] == VAL_GLOB) {
-			opcodes[lhs + 1] = VAL_GLOB_ADDR;
-		}
-
+		convert_to_addr(lhs);
 		emit(OP_SAVE);
 	}
 
@@ -635,11 +685,25 @@ void parse_declarator(int ctx) {
 			else {
 				add_global(id);
 			}
+		}
 
-			if (ctx != DECL_CTX_FOR_INIT) {
-				check_token(T_SEMI);
-				next_token();
-			}
+		if (token == T_ASSIGNMENT && ctx != DECL_CTX_PARAM) {
+			next_token();
+
+			emit(OP_PUSH);
+			emit(VAL_LOCAL_ADDR);
+
+			int index = get_local(id);
+			emit(-4 * (index + 1));
+
+			parse_assignment_expr();
+
+			emit(OP_SAVE);
+		}
+
+		if (ctx == DECL_CTX_DEFAULT) {
+			check_token(T_SEMI);
+			next_token();
 		}
 	}
 }
@@ -706,11 +770,11 @@ void parse_stmt() {
 		parse_assignment_expr();
 
 		check_token(T_RPAREN);
+		next_token();
 		
 		emit(OP_JMPZ);
 		emit(endLabel);
 
-		next_token();
 		parse_stmt();
 
 		emit(OP_JMP);
@@ -723,22 +787,28 @@ void parse_stmt() {
 	}
 
 	if (token == T_DO) {
+		next_token();
+
 		int startLabel = nlabels++;
 		int endLabel = nlabels++;
 		emit(OP_LABEL);
 		emit(startLabel);
 
-		next_token();
 		parse_stmt();
 
-		parse_token(T_WHILE);
-
-		parse_token(T_LPAREN);
-
+		check_token(T_WHILE);
 		next_token();
+
+		check_token(T_LPAREN);
+		next_token();
+
 		parse_assignment_expr();
 
 		check_token(T_RPAREN);
+		next_token();
+
+		check_token(T_SEMI);
+		next_token();
 
 		emit(OP_JMPZ);
 		emit(endLabel);
@@ -1009,6 +1079,13 @@ void emit_asm_cmp(const char* op) {
 	printf("  push eax\n");
 }
 
+void emit_asm_binop(const char* op) {
+	printf("  pop eax\n");
+	printf("  pop ecx\n");
+	printf("  %s ecx, eax\n", op);
+	printf("  push ecx\n");
+}
+
 void gen_code(int from, int end) {
 	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
@@ -1108,22 +1185,24 @@ void gen_code(int from, int end) {
 			printf("\n__%s_%d:\n", funcname, id);
 		}
 		else if (op == OP_ADD) {
-			printf("  pop eax\n");
-			printf("  pop ecx\n");
-			printf("  add ecx, eax\n");
-			printf("  push ecx\n");
+			emit_asm_binop("add");
 		}
 		else if (op == OP_SUB) {
-			printf("  pop eax\n");
-			printf("  pop ecx\n");
-			printf("  sub ecx, eax\n");
-			printf("  push ecx\n");
+			emit_asm_binop("sub");
 		}
 		else if (op == OP_MUL) {
+			emit_asm_binop("imul");
+		}
+		else if (op == OP_INC || op == OP_DEC) {
 			printf("  pop eax\n");
-			printf("  pop ecx\n");
-			printf("  imul ecx, eax\n");
+			printf("  %s DWORD PTR [eax], 1\n", op == OP_INC ? "add" : "sub");
 			printf("  push ecx\n");
+		}
+		else if (op == OP_INC_POST || op == OP_DEC_POST) {
+			printf("  pop ecx\n");
+			printf("  mov eax, DWORD PTR [ecx]\n");
+			printf("  %s DWORD PTR  [ecx], 1", op == OP_INC_POST ? "add" : "sub");
+			printf("  push eax\n");
 		}
 		else if (op == OP_LESS) {
 			emit_asm_cmp("setl");
@@ -1157,7 +1236,10 @@ int main(int argc, char** argv) {
 	if (argc != 2) return -1;
 
 
+	add_extern("fopen");
+	add_extern("fclose");
 	add_extern("fgetc");
+	add_extern("ungetc");
 	add_extern("printf");
 	add_extern("exit");
 
