@@ -1,5 +1,7 @@
 #include <stdio.h>
 
 void test(int a, int b) {
-	printf("%d %d", a == b);
+	for (int i = 0; i < b; i = i + 1) {
+		printf("%d\n", i);
+	}
 }

@@ -23,6 +23,7 @@ enum {
 	, T_SUB
 	, T_MUL
 	, T_LESS
+	, T_GREATER
 	, T_EQ
 	, T_OR
 	, T_AND
@@ -44,6 +45,7 @@ enum {
 	, T_ELSE
 	, T_WHILE
 	, T_DO
+	, T_FOR
 };
 
 
@@ -86,6 +88,7 @@ enum {
 	, OP_MUL
 	, OP_LESS
 	, OP_EQ
+	, OP_FOR
 };
 enum {
 	VAL_STR,
@@ -161,6 +164,7 @@ const char* tok2str(int tok) {
 	case T_SUB: return "SUB";
 	case T_MUL: return "MUL";
 	case T_LESS: return "LESS";
+	case T_GREATER: return "GREATER";
 	case T_OR: return "OR";
 	case T_AND: return "AND";
 	case T_BIT_OR: return "BIT_OR";
@@ -179,6 +183,7 @@ const char* tok2str(int tok) {
 	case T_ELSE: return "ELSE";
 	case T_WHILE: return "WHILE";
 	case T_DO: return "DO";
+	case T_FOR: return "FOR";
 	}
 	return "XXX";
 }
@@ -244,6 +249,7 @@ int next_token_helper() {
 	if (ch == '-') return T_SUB;
 	if (ch == '*') return T_MUL;
 	if (ch == '<') return T_LESS;
+	if (ch == '>') return T_GREATER;
 
 	if (ch == '|') {
 		ch = fgetc(f);
@@ -293,6 +299,9 @@ int next_token_helper() {
 		}
 		else if (!strcmp(token_id, "do")) {
 			t = T_DO;
+		}
+		else if (!strcmp(token_id, "for")) {
+			t = T_FOR;
 		}
 		else if (!strcmp(token_id, "else")) {
 			t = T_ELSE;
@@ -372,9 +381,15 @@ void next_token() {
 // end scanner
 
 // parser
+enum {
+	DECL_CTX_DEFAULT,
+	DECL_CTX_PARAM,
+	DECL_CTX_FOR_INIT
+};
+
 void parse_assignment_expr();
 void parse_stmts(int);
-void parse_declaration(bool);
+void parse_declaration(int);
 
 
 bool check_token(int expected) {
@@ -449,6 +464,8 @@ void parse_primary_expr() {
 		next_token();
 		return;
 	}
+	
+	next_token();
 }
 
 void parse_postfix_expr() {
@@ -521,7 +538,7 @@ void parse_func_params() {
 	next_token();
 	while (token != T_RPAREN && token != T_EOF) {
 
-		parse_declaration(true);
+		parse_declaration(DECL_CTX_PARAM);
 
 		if (token != T_COMMA) {
 			break;
@@ -582,7 +599,7 @@ void parse_direct_declarator(char* id, bool* func) {
 }
 
 // declarator : pointer? direct_declarator
-void parse_declarator(bool param) {
+void parse_declarator(int ctx) {
 	// pointer
 	while (token == T_MUL) {
 		next_token();
@@ -608,7 +625,7 @@ void parse_declarator(bool param) {
 
 	}
 	else {
-		if (param) {
+		if (ctx == DECL_CTX_PARAM) {
 			add_param(id);
 		}
 		else {
@@ -618,22 +635,25 @@ void parse_declarator(bool param) {
 			else {
 				add_global(id);
 			}
-			check_token(T_SEMI);
-			next_token();
+
+			if (ctx != DECL_CTX_FOR_INIT) {
+				check_token(T_SEMI);
+				next_token();
+			}
 		}
 	}
 }
 
-void parse_declaration(bool param) {
+void parse_declaration(int ctx) {
 	parse_decl_specs();
-	parse_declarator(param);
+	parse_declarator(ctx);
 }
 
 void parse_stmt() {
 	// func_decl: TYPEID ID () {}
 	// var_decl: TYPEID ID;
 	if (token == T_TYPEID) {
-		parse_declaration(false);
+		parse_declaration(DECL_CTX_DEFAULT);
 		return;
 	}
 
@@ -722,6 +742,61 @@ void parse_stmt() {
 
 		emit(OP_JMPZ);
 		emit(endLabel);
+
+		emit(OP_JMP);
+		emit(startLabel);
+
+		emit(OP_LABEL);
+		emit(endLabel);
+
+		return;
+	}
+
+	if (token == T_FOR) {
+		int startLabel = nlabels++;
+		int endLabel = nlabels++;
+
+		parse_token(T_LPAREN);
+		next_token();
+
+		if (token == T_TYPEID) {
+			parse_declaration(DECL_CTX_FOR_INIT);
+		}
+		else if (token != T_SEMI) {
+			parse_assignment_expr();
+		}
+
+		check_token(T_SEMI);
+		next_token();
+
+		emit(OP_LABEL);
+		emit(startLabel);
+
+		if (token != T_SEMI) {
+			parse_assignment_expr();
+		}
+
+		emit(OP_JMPZ);
+		emit(endLabel);
+
+		check_token(T_SEMI);
+		next_token();
+
+		emit(OP_FOR);
+		int incrementEndRef = emit(0);
+		int bodyEndRef = emit(0);
+
+		if (token != T_RPAREN) {
+			parse_assignment_expr();
+		}
+		opcodes[incrementEndRef] = nopcodes;
+
+		check_token(T_RPAREN);
+		next_token();
+
+		parse_stmt();
+
+		opcodes[bodyEndRef] = nopcodes;
 
 		emit(OP_JMP);
 		emit(startLabel);
@@ -1006,6 +1081,16 @@ void gen_code(int from, int end) {
 		else if (op == OP_RETURN) {
 			printf("  pop eax\n");
 			printf("  jmp SHORT __exit_%s\n", funcname);
+		}
+		else if (op == OP_FOR) {
+			// post increment instructions after body
+
+			int incrementEnd = opcodes[i++];
+			int bodyEnd = opcodes[i++];
+			gen_code(incrementEnd, bodyEnd);
+			gen_code(i, incrementEnd);
+			
+			i = bodyEnd;
 		}
 		else if (op == OP_JMP) {
 			int label = opcodes[i++];
