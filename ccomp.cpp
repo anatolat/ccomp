@@ -92,8 +92,10 @@ enum {
 	, OP_SAVE
 	, OP_CALL
 	, OP_RETURN
+	, OP_TEST
 	, OP_JMP
 	, OP_JMPZ
+	, OP_JMPNZ
 	, OP_LABEL
 	, OP_ADD
 	, OP_SUB
@@ -649,22 +651,37 @@ int op_prec(int op) {
 	}
 }
 
+void emit_or_jump(int label) {
+	emit(OP_JMPNZ);
+	emit(label);
+}
+
 void parse_expr(int min_prec) {
 	int lhs = nopcodes;
 	parse_unary_expr();
+
+	int or_label = -1;
 
 	while (true) {
 		int prec = op_prec(token);
 		if (prec < min_prec) break;
 
 		int op = token;
-
 		next_token();
+
+		if (op == T_OR) {
+			or_label = nlabels++;
+			emit_or_jump(or_label);
+		}
+
 		parse_expr(prec == 1 ? prec : prec + 1);
 
 		if (op == T_ASSIGNMENT) {
 			convert_to_addr(lhs);
 			emit(OP_SAVE);
+		}
+		else if (op == T_OR) {
+			// do nothing
 		}
 		else if (op == T_ADD) emit(OP_ADD);
 		else if (op == T_SUB) emit(OP_SUB);
@@ -678,6 +695,27 @@ void parse_expr(int min_prec) {
 		else {
 			printf("Internal error (%d): operator not supported %s\n", lineno, tok2str(op));
 		}
+	}
+
+	if (or_label != -1) {
+		emit_or_jump(or_label);
+		emit(OP_PUSH);
+		emit(VAL_INT);
+		emit(0);
+
+		int end = nlabels++;
+		emit(OP_JMP);
+		emit(end);
+
+		emit(OP_LABEL);
+		emit(or_label);
+
+		emit(OP_PUSH);
+		emit(VAL_INT);
+		emit(1);
+
+		emit(OP_LABEL);
+		emit(end);
 	}
 }
 
@@ -1281,6 +1319,13 @@ void gen_code(int from, int end) {
 			int label = opcodes[i++];
 			printf("  je SHORT __%s_%d\n", funcname, label);
 		}
+		else if (op == OP_JMPNZ) {
+			printf("  pop eax\n");
+			printf("  test eax, eax\n");
+
+			int label = opcodes[i++];
+			printf("  jne SHORT __%s_%d\n", funcname, label);
+		}
 		else if (op == OP_LABEL) {
 			int id = opcodes[i++];
 			printf("\n__%s_%d:\n", funcname, id);
@@ -1302,7 +1347,7 @@ void gen_code(int from, int end) {
 		else if (op == OP_INC_POST || op == OP_DEC_POST) {
 			printf("  pop ecx\n");
 			printf("  mov eax, DWORD PTR [ecx]\n");
-			printf("  %s DWORD PTR  [ecx], 1", op == OP_INC_POST ? "add" : "sub");
+			printf("  %s DWORD PTR  [ecx], 1\n", op == OP_INC_POST ? "add" : "sub");
 			printf("  push eax\n");
 		}
 		else if (op == OP_LESS) {

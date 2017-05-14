@@ -3,8 +3,16 @@
 int gg;
 
 
+int fa(int a) {
+	printf("fa\n");
+	return a;
+}
+
+int fb(int b) {
+	printf("fb\n");
+	return b;
+}
+
 void testi(int a, int b) {
-	printf("a == b: %d\na != b: %d\na > b: %d\na < b: %d\na >= b: %d\na <= b: %d\n",
-		 a == b, a != b,
-		a > b, a < b, a >= b, a <= b);
+	printf("result: %d\n", fa(a) || fb(b));
 }
