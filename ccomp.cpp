@@ -23,13 +23,21 @@ enum {
 	, T_ADD
 	, T_SUB
 	, T_MUL
+	, T_DIV
+	, T_MOD
 	, T_LESS
 	, T_GREATER
+	, T_LESS_EQ
+	, T_GREATER_EQ
 	, T_EQ
+	, T_NOT_EQ
 	, T_OR
 	, T_AND
 	, T_BIT_OR
 	, T_BIT_AND
+	, T_BIT_XOR
+	, T_SHL
+	, T_SHR
 
 	, T_NOT
 	, T_INC
@@ -56,8 +64,9 @@ FILE* f;
 int token;
 char token_id[256];
 int token_num;
+int lineno;
 
-int ntypes = 3 ;
+int ntypes = 3;
 char* types[256] = {
 	"void",
 	"char",
@@ -90,7 +99,11 @@ enum {
 	, OP_SUB
 	, OP_MUL
 	, OP_LESS
+	, OP_GREATER
+	, OP_LESS_EQ
+	, OP_GREATER_EQ
 	, OP_EQ
+	, OP_NOT_EQ
 	, OP_FOR
 	, OP_INC
 	, OP_DEC
@@ -168,15 +181,23 @@ const char* tok2str(int tok) {
 	case T_ASSIGNMENT: return "ASSIGNMENT";
 	case T_ASSIGNMENT_ADD: return "ASSIGNMENT_ADD";
 	case T_EQ: return "EQ";
+	case T_NOT_EQ: return "NOT-EQ";
 	case T_ADD: return "ADD";
 	case T_SUB: return "SUB";
 	case T_MUL: return "MUL";
+	case T_DIV: return "DIV";
+	case T_MOD: return "MOD";
 	case T_LESS: return "LESS";
 	case T_GREATER: return "GREATER";
+	case T_LESS_EQ: return "LESS-EQ";
+	case T_GREATER_EQ: return "GREATER-EQ";
 	case T_OR: return "OR";
 	case T_AND: return "AND";
 	case T_BIT_OR: return "BIT_OR";
 	case T_BIT_AND: return "BIT_AND";
+	case T_BIT_XOR: return "BIT_XOR";
+	case T_SHL: return "SHL";
+	case T_SHR: return "SHR";
 	case T_NOT: return "NOT";
 	case T_INC: return "INC";
 	case T_DEC: return "DEC";
@@ -204,12 +225,16 @@ int next_token_helper() {
 
 	do {
 		ch = fgetc(f);
+		if (ch == '\n') ++lineno;
+
 
 		// ignore preprocessor directives
 		if (ch == '#') {
 			while (ch != '\n' && ch != EOF) {
 				ch = fgetc(f);
 			}
+
+			if (ch == '\n') ++lineno;
 		}
 		// comments
 		else if (ch == '/') {
@@ -218,10 +243,14 @@ int next_token_helper() {
 				while (ch != '\n' && ch != EOF) {
 					ch = fgetc(f);
 				}
+
+				if (ch == '\n') ++lineno;
 			}
 			else if (ch == '*') {
 				while (ch != EOF) {
 					ch = fgetc(f);
+					if (ch == '\n') ++lineno;
+
 					if (ch == '*') {
 						ch = fgetc(f);
 						if (ch == '/') {
@@ -271,8 +300,22 @@ int next_token_helper() {
 		return T_SUB;
 	}
 	if (ch == '*') return T_MUL;
-	if (ch == '<') return T_LESS;
-	if (ch == '>') return T_GREATER;
+	if (ch == '%') return T_MOD;
+	if (ch == '/') return T_DIV;
+	if (ch == '<') {
+		ch = fgetc(f);
+		if (ch == '=') return T_LESS_EQ;
+
+		ungetc(ch, f);
+		return T_LESS;
+	}
+	if (ch == '>') {
+		ch = fgetc(f);
+		if (ch == '=') return T_GREATER_EQ;
+
+		ungetc(ch, f);
+		return T_GREATER;
+	}
 
 	if (ch == '|') {
 		ch = fgetc(f);
@@ -290,7 +333,13 @@ int next_token_helper() {
 		return T_BIT_AND;
 	}
 
-	if (ch == '!') return T_NOT;
+	if (ch == '!') {
+		ch = fgetc(f);
+		if (ch == '=') return T_NOT_EQ;
+
+		ungetc(ch, f);
+		return T_NOT;
+	}
 
 	if (ch == '(') return T_LPAREN;
 	if (ch == ')') return T_RPAREN;
@@ -298,7 +347,6 @@ int next_token_helper() {
 	if (ch == ']') return T_RBRACKET;
 	if (ch == '{') return T_LCURLY;
 	if (ch == '}') return T_RCURLY;
-
 
 	if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z') {
 
@@ -393,7 +441,7 @@ int next_token_helper() {
 	}
 
 
-	printf("Invalid token %c\n", ch);
+	printf("Syntax error (%d): invalid token %c\n", lineno, ch);
 	return T_EOF;
 }
 
@@ -417,7 +465,7 @@ void parse_declaration(int);
 
 bool check_token(int expected) {
 	if (token != expected) {
-		printf("Syntax error: unexpected token %s, expected %s\n", tok2str(token), tok2str(expected));
+		printf("Syntax error (%d): unexpected token %s, expected %s\n", lineno, tok2str(token), tok2str(expected));
 		return false;
 	}
 	return true;
@@ -482,7 +530,7 @@ void parse_primary_expr() {
 			emit(id);
 		}
 		else {
-			printf("Unknown identifier %s\n", token_id);
+			printf("Error (%d): unknown identifier %s\n", lineno, token_id);
 		}
 		next_token();
 		return;
@@ -559,29 +607,82 @@ void parse_unary_expr() {
 	parse_postfix_expr();
 }
 
-void parse_assignment_expr() {
+int op_prec(int op) {
+	switch (op) {
+	case T_MUL: case T_DIV: case T_MOD:
+		return 11;
+
+	case T_ADD: case T_SUB: 
+		return 10;
+
+	case T_SHL: case T_SHR:
+		return 9;
+
+	case T_LESS: case T_GREATER:
+	case T_LESS_EQ: case T_GREATER_EQ:
+		return 8;	
+
+	case T_EQ: case T_NOT_EQ:
+		return 7;
+
+	case T_BIT_AND:
+		return 6;
+
+	case T_BIT_XOR:
+		return 5;
+
+	case T_BIT_OR:
+		return 4;
+
+	case T_AND:
+		return 3;
+
+	case T_OR:
+		return 2;
+
+	case T_ASSIGNMENT:
+	case T_ASSIGNMENT_ADD:
+		return 1;
+
+	default:
+		return -1;
+	}
+}
+
+void parse_expr(int min_prec) {
 	int lhs = nopcodes;
 	parse_unary_expr();
 
-	if (token == T_ASSIGNMENT) {
-		next_token(); 
-		parse_assignment_expr();
+	while (true) {
+		int prec = op_prec(token);
+		if (prec < min_prec) break;
 
-		convert_to_addr(lhs);
-		emit(OP_SAVE);
-	}
-
-	if (token == T_ADD || token == T_SUB || token == T_MUL || token == T_LESS || token == T_EQ) {
 		int op = token;
-		next_token();
-		parse_postfix_expr();
 
-		if (op == T_ADD) emit(OP_ADD);
+		next_token();
+		parse_expr(prec == 1 ? prec : prec + 1);
+
+		if (op == T_ASSIGNMENT) {
+			convert_to_addr(lhs);
+			emit(OP_SAVE);
+		}
+		else if (op == T_ADD) emit(OP_ADD);
 		else if (op == T_SUB) emit(OP_SUB);
 		else if (op == T_MUL) emit(OP_MUL);
 		else if (op == T_LESS) emit(OP_LESS);
+		else if (op == T_GREATER) emit(OP_GREATER);
+		else if (op == T_LESS_EQ) emit(OP_LESS_EQ);
+		else if (op == T_GREATER_EQ) emit(OP_GREATER_EQ);
 		else if (op == T_EQ) emit(OP_EQ);
+		else if (op == T_NOT_EQ) emit(OP_NOT_EQ);
+		else {
+			printf("Internal error (%d): operator not supported %s\n", lineno, tok2str(op));
+		}
 	}
+}
+
+void parse_assignment_expr() {
+	parse_expr(1);
 }
 
 void parse_func_params() {
@@ -1207,8 +1308,20 @@ void gen_code(int from, int end) {
 		else if (op == OP_LESS) {
 			emit_asm_cmp("setl");
 		}
+		else if (op == OP_GREATER) {
+			emit_asm_cmp("setg");
+		}
+		else if (op == OP_LESS_EQ) {
+			emit_asm_cmp("setle");
+		}
+		else if (op == OP_GREATER_EQ) {
+			emit_asm_cmp("setge");
+		}
 		else if (op == OP_EQ) {
 			emit_asm_cmp("sete");
+		}
+		else if (op == OP_NOT_EQ) {
+			emit_asm_cmp("setne");
 		}
 	}
 }
@@ -1220,6 +1333,7 @@ void gen_asm() {
 
 	printf(".code\n\n");
 
+	lineno = 1;
 	next_token();
 	parse_stmts(T_EOF);
 
