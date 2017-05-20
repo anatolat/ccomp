@@ -114,6 +114,7 @@ enum {
 	, OP_DEC
 	, OP_INC_POST
 	, OP_DEC_POST
+	, OP_NOT
 };
 enum {
 	VAL_STR,
@@ -625,6 +626,15 @@ void parse_unary_expr() {
 		last_value_ref = nopcodes;
 
 		emit(inc ? OP_INC : OP_DEC);
+		return;
+	}
+	if (token == T_NOT) {
+		next_token();
+
+		parse_unary_expr();
+
+		last_value_ref = nopcodes;
+		emit(OP_NOT);
 		return;
 	}
 	
@@ -1443,6 +1453,13 @@ void gen_code(int from, int end) {
 		}
 		else if (op == OP_NOT_EQ) {
 			emit_asm_cmp("setne");
+		}
+		else if (op == OP_NOT){
+			printf("  pop ecx\n");
+			printf("  xor eax, eax\n");
+			printf("  cmp ecx, eax\n");
+			printf("  sete al\n");
+			printf("  push eax\n");
 		}
 	}
 }
