@@ -101,6 +101,8 @@ enum {
 	, OP_ADD
 	, OP_SUB
 	, OP_MUL
+	, OP_DIV
+	, OP_MOD
 	, OP_LESS
 	, OP_GREATER
 	, OP_LESS_EQ
@@ -269,6 +271,7 @@ int next_token_helper() {
 			}
 			else {
 				ungetc(ch, f);
+				ch = '/';
 			}
 		}
 
@@ -715,6 +718,8 @@ void parse_expr(int min_prec) {
 		else if (op == T_ADD) emit(OP_ADD);
 		else if (op == T_SUB) emit(OP_SUB);
 		else if (op == T_MUL) emit(OP_MUL);
+		else if (op == T_DIV) emit(OP_DIV);
+		else if (op == T_MOD) emit(OP_MOD);
 		else if (op == T_LESS) emit(OP_LESS);
 		else if (op == T_GREATER) emit(OP_GREATER);
 		else if (op == T_LESS_EQ) emit(OP_LESS_EQ);
@@ -1394,6 +1399,20 @@ void gen_code(int from, int end) {
 		}
 		else if (op == OP_MUL) {
 			emit_asm_binop("imul");
+		}
+		else if (op == OP_DIV) {
+			printf("  pop ecx\n");
+			printf("  pop eax\n");
+			printf("  cdq\n");
+			printf("  idiv ecx\n", op);
+			printf("  push eax\n");
+		}
+		else if (op == OP_MOD) {
+			printf("  pop ecx\n");
+			printf("  pop eax\n");
+			printf("  cdq\n");
+			printf("  idiv ecx\n", op);
+			printf("  push edx\n");
 		}
 		else if (op == OP_INC || op == OP_DEC) {
 			printf("  pop eax\n");

@@ -8,8 +8,8 @@ helloworld.c ^
 fact_rec.c ^
 test_multiargs.c ^
 test_locals.c ^
-test_incdec.c
-
+test_incdec.c ^
+test_expr.c 
 rem fizzbuzz.c 
 
 setlocal enabledelayedexpansion
