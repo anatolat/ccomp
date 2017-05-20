@@ -89,6 +89,7 @@ enum {
 	OP_LOAD
 	, OP_ADDR
 	, OP_PUSH
+	, OP_DEREF
 	, OP_SAVE
 	, OP_CALL
 	, OP_RETURN
@@ -142,6 +143,8 @@ char externs[256][64];
 
 int nglobals;
 char globals[256][64];
+
+int last_value_ref = -1;
 
 int add_extern(const char* s);
 int add_param(const char* s);
@@ -484,7 +487,8 @@ bool try_parse_token(int expected) {
 }
 
 void parse_primary_expr() {
-	if (token == T_INT_LIT) {
+	last_value_ref = nopcodes;
+	if (token == T_INT_LIT) {		
 		emit(OP_PUSH); 
 		emit(VAL_INT);
 		emit(token_num);
@@ -541,22 +545,22 @@ void parse_primary_expr() {
 	next_token();
 }
 
-void convert_to_addr(int code) {
-	if (opcodes[code] == OP_PUSH && opcodes[code + 1] == VAL_LOCAL) {
-		opcodes[code + 1] = VAL_LOCAL_ADDR;
+void convert_to_addr(int ref) {
+	if (opcodes[ref] == OP_PUSH && opcodes[ref + 1] == VAL_LOCAL) {
+		opcodes[ref + 1] = VAL_LOCAL_ADDR;
 	}
-	else if (opcodes[code] == OP_PUSH && opcodes[code + 1] == VAL_GLOB) {
-		opcodes[code + 1] = VAL_GLOB_ADDR;
+	else if (opcodes[ref] == OP_PUSH && opcodes[ref + 1] == VAL_GLOB) {
+		opcodes[ref + 1] = VAL_GLOB_ADDR;
 	}
 }
 
 void parse_postfix_expr() {
-	int code = nopcodes;
 	parse_primary_expr();
 
 	if (token == T_LPAREN) {
 		next_token();
 
+		last_value_ref = nopcodes;
 		emit(OP_CALL);
 		int sizes[256] = {}; // size of the code generated for each parameter
 		int callHeader = emit(0);
@@ -587,8 +591,23 @@ void parse_postfix_expr() {
 		bool inc = token == T_INC;
 		next_token();
 
-		convert_to_addr(code);
+		convert_to_addr(last_value_ref);
+
+		last_value_ref = nopcodes;
 		emit(inc ? OP_INC_POST : OP_DEC_POST);
+		return;
+	}
+
+	if (token == T_LBRACKET) {
+		next_token();
+
+		parse_assignment_expr();
+
+		last_value_ref = nopcodes;
+		emit(OP_DEREF);
+
+		check_token(T_RBRACKET);
+		next_token();
 	}
 }
 
@@ -597,10 +616,10 @@ void parse_unary_expr() {
 		bool inc = token == T_INC;
 		next_token();
 		
-		int code = nopcodes;
 		parse_unary_expr();
 
-		convert_to_addr(code);
+		convert_to_addr(last_value_ref);
+		last_value_ref = nopcodes;
 
 		emit(inc ? OP_INC : OP_DEC);
 		return;
@@ -662,7 +681,6 @@ void emit_and_jump(int label) {
 }
 
 void parse_expr(int min_prec) {
-	int lhs = nopcodes;
 	parse_unary_expr();
 
 	int or_label = -1;
@@ -687,7 +705,7 @@ void parse_expr(int min_prec) {
 		parse_expr(prec == 1 ? prec : prec + 1);
 
 		if (op == T_ASSIGNMENT) {
-			convert_to_addr(lhs);
+			convert_to_addr(last_value_ref);
 			emit(OP_SAVE);
 		}
 		else if (op == T_OR || op == T_AND) {
@@ -1300,6 +1318,12 @@ void gen_code(int from, int end) {
 				printf("  push eax\n", value);
 			}
 		}
+		else if (op == OP_DEREF) {
+			printf("  pop eax\n");
+			printf("  pop ecx\n");
+			printf("  mov  eax, DWORD PTR [ecx + eax*4]\n");
+			printf("  push eax\n");
+		}
 		else if (op == OP_SAVE) {
 			printf("  pop eax\n");
 			printf("  pop ecx\n");
@@ -1406,6 +1430,8 @@ void gen_asm() {
 	// header
 	printf(".586\n");
 	printf(".model flat, c\n\n");
+	printf("INCLUDELIB MSVCRTD\n");
+	printf("printf PROTO C :VARARG\n");
 
 	printf(".code\n\n");
 
@@ -1424,7 +1450,6 @@ void gen_asm() {
 int main(int argc, char** argv) {
 
 	if (argc != 2) return -1;
-
 
 	add_extern("fopen");
 	add_extern("fclose");

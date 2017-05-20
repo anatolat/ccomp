@@ -2,7 +2,7 @@
  - Clean up stack after calling function
  - Allocate stack with required size
  - support variables of different size (char, short, etc ...)
- - variables initialization
  - array initialization
- - for loops
+ - break/continue
  - more operators
+ - array indexing

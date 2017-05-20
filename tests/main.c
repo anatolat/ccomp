@@ -1,18 +1,10 @@
 #include <stdio.h>
 
-int gg;
-
-
-int fa(int a) {
-	printf("fa\n");
-	return a;
+int testi(int* ar, int i) {
+	ar[i] = 1;
+	return ar[i];
 }
 
-int fb(int b) {
-	printf("fb\n");
-	return b;
-}
-
-void testi(int a, int b) {
-	printf("result: %d\n", fa(a) && fb(b));
+int main() {
+	printf("Hello, World!\n");
 }
