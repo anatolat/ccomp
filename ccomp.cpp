@@ -702,10 +702,11 @@ void parse_expr(int min_prec) {
 			emit_and_jump(and_label);
 		}
 
+		int lvalue_ref = last_value_ref;
 		parse_expr(prec == 1 ? prec : prec + 1);
 
 		if (op == T_ASSIGNMENT) {
-			convert_to_addr(last_value_ref);
+			convert_to_addr(lvalue_ref);
 			emit(OP_SAVE);
 		}
 		else if (op == T_OR || op == T_AND) {
@@ -1397,7 +1398,8 @@ void gen_code(int from, int end) {
 		else if (op == OP_INC || op == OP_DEC) {
 			printf("  pop eax\n");
 			printf("  %s DWORD PTR [eax], 1\n", op == OP_INC ? "add" : "sub");
-			printf("  push ecx\n");
+			printf("  mov eax, DWORD PTR [eax]\n");
+			printf("  push eax\n");
 		}
 		else if (op == OP_INC_POST || op == OP_DEC_POST) {
 			printf("  pop ecx\n");

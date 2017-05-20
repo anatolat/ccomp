@@ -4,3 +4,7 @@ int fact(int n) {
 
 	return n *  fact(n - 1);
 }
+
+int main() {
+  printf("%d\n", fact(5));
+}

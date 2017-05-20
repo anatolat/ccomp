@@ -4,7 +4,13 @@
 
 set CC=..\Debug\ccomp
 set src= ^
-main.c 
+helloworld.c ^
+fact_rec.c ^
+test_multiargs.c ^
+test_locals.c ^
+test_incdec.c
+
+rem fizzbuzz.c 
 
 setlocal enabledelayedexpansion
 for %%x in (%src%) do call :runTest %%x
@@ -25,7 +31,7 @@ goto :end
   LINK /nologo /SUBSYSTEM:CONSOLE %name%.obj  
   if not %errorlevel% equ 0 (goto :eof)
 
-  echo. Run '%name'
+  echo. Run '%name%'
   %name% > %name%.out
 
   echo. Compare output '%name%'
