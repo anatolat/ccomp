@@ -517,6 +517,15 @@ void parse_primary_expr() {
 		next_token();
 		return;
 	}
+	if (token == T_LPAREN) {
+		next_token();
+
+		parse_assignment_expr();
+
+		check_token(T_RPAREN);
+		next_token();
+		return;
+	}
 	if (check_token(T_ID)) {
 		int id = get_local(token_id);
 		if (id != -1) {
@@ -943,21 +952,32 @@ void parse_stmt() {
 
 		check_token(T_RPAREN);
 
+		int noteqLabel = nlabels++;
 		emit(OP_JMPZ);
-		int endLabel = nlabels++;
-		emit(endLabel);
+		emit(noteqLabel);
 
 		next_token();
 		parse_stmt();
 
-		emit(OP_LABEL);
-		emit(endLabel);
-
+		int endLabel;
 		if (token == T_ELSE) {
+			endLabel = nlabels++;
+			emit(OP_JMP);
+			emit(endLabel);
+
+			emit(OP_LABEL);
+			emit(noteqLabel);
+
 			next_token();
 
 			parse_stmt();
 		} 
+		else {
+			endLabel = noteqLabel;
+		}
+
+		emit(OP_LABEL);
+		emit(endLabel);
 
 		return;
 	}
@@ -1367,7 +1387,7 @@ void gen_code(int from, int end) {
 		}
 		else if (op == OP_RETURN) {
 			printf("  pop eax\n");
-			printf("  jmp SHORT __exit_%s\n", funcname);
+			printf("  jmp __exit_%s\n", funcname);
 		}
 		else if (op == OP_FOR) {
 			// post increment instructions after body
@@ -1381,21 +1401,21 @@ void gen_code(int from, int end) {
 		}
 		else if (op == OP_JMP) {
 			int label = opcodes[i++];
-			printf("  jmp SHORT __%s_%d\n", funcname, label);
+			printf("  jmp __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_JMPZ) {
 			printf("  pop eax\n");
 			printf("  test eax, eax\n");
 
 			int label = opcodes[i++];
-			printf("  je SHORT __%s_%d\n", funcname, label);
+			printf("  je __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_JMPNZ) {
 			printf("  pop eax\n");
 			printf("  test eax, eax\n");
 
 			int label = opcodes[i++];
-			printf("  jne SHORT __%s_%d\n", funcname, label);
+			printf("  jne __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_LABEL) {
 			int id = opcodes[i++];

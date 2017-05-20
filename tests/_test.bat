@@ -1,18 +1,23 @@
 @echo off
+call "%VS120COMNTOOLS%\vsvars32.bat"
 
-@call "%VS120COMNTOOLS%\vsvars32.bat"
-
+setlocal enabledelayedexpansion
 set CC=..\Debug\ccomp
-set src= ^
+
+if "%1"=="" (
+  set src= ^
 helloworld.c ^
 fact_rec.c ^
 test_multiargs.c ^
 test_locals.c ^
 test_incdec.c ^
-test_expr.c 
-rem fizzbuzz.c 
+test_expr.c ^
+test_if_else.c ^
+fizzbuzz.c 
+) else (
+  set src=%1
+)
 
-setlocal enabledelayedexpansion
 for %%x in (%src%) do call :runTest %%x
 goto :end
 

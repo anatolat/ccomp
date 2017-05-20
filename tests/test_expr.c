@@ -13,4 +13,7 @@ int main() {
 
 	// unary not
 	printf("!0=%d !1=%d\n", !0, !1);
+
+	// (expression)
+	printf("%d\n", (100));
 }
