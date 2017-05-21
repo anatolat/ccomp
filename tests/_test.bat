@@ -13,7 +13,10 @@ test_locals.c ^
 test_incdec.c ^
 test_expr.c ^
 test_if_else.c ^
-fizzbuzz.c 
+fizzbuzz.c ^
+test_array.c ^
+test_array_local.c
+
 ) else (
   set src=%1
 )
