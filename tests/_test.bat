@@ -25,7 +25,8 @@ test_strs.c ^
 test_strs2.c ^
 test_scopes.c ^
 test_break_continue.c ^
-test_return.c
+test_return.c ^
+test_ptr.c
 
 ) else (
   set src=%1

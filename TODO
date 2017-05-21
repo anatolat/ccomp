@@ -1,8 +1,5 @@
- - operator priority
- - Clean up stack after calling function
- - Allocate stack with required size
- - support variables of different size (char, short, etc ...)
  - array initialization
- - break/continue
- - more operators
- - array indexing
+ - ternary operator
+ - enums
+ - switch case
+ - Clean up stack after calling function

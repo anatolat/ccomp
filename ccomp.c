@@ -756,6 +756,31 @@ void parse_unary_expr() {
 		set_type_placeholder();
 		return;
 	}
+	if (token == T_BIT_AND) {
+		next_token();
+
+		parse_unary_expr();
+
+		convert_to_addr(last_value_ref);
+
+		set_type_placeholder(); // FIXME
+		return;
+	}
+	if (token == T_MUL) {
+		next_token();
+
+		parse_unary_expr();
+
+		// TODO optimize
+		emit_push(VAL_INT, 0, 0);
+
+		last_value_ref = nopcodes;
+		emit(OP_DEREF);
+		emit(0);
+
+		set_type_placeholder(); // FIXME
+		return;
+	}
 	
 	parse_postfix_expr();
 }
