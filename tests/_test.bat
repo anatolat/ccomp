@@ -23,7 +23,8 @@ test_array_chars.c ^
 test_strs.c ^
 100doors_simplified.c ^
 test_strs2.c ^
-test_scopes.c
+test_scopes.c ^
+test_break_continue.c
 
 ) else (
   set src=%1

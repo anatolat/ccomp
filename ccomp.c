@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
-#include <cstring>
+#include <string.h>
 
 enum {
 	T_EOF
@@ -523,12 +523,12 @@ void parse_stmts(int);
 void parse_declaration(int);
 
 
-bool check_token(int expected) {
+int check_token(int expected) {
 	if (token != expected) {
 		fprintf(stderr, "Syntax error (%d): unexpected token %s, expected %s\n", lineno, tok2str(token), tok2str(expected));
-		return false;
+		return 0;
 	}
-	return true;
+	return 1;
 }
 
 void parse_token(int expected) {
@@ -536,7 +536,7 @@ void parse_token(int expected) {
 	check_token(expected);
 }
 
-bool try_parse_token(int expected) {
+int try_parse_token(int expected) {
 	next_token();
 	return token == expected;
 }
@@ -592,7 +592,7 @@ void parse_primary_expr() {
 			type_info_size = local_vars[id][1];
 			memcpy(type_info, &local_vars[id][2], type_info_size * sizeof(type_info[0]));
 
-			bool is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
+			int is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
 			int size = get_type_byte_size(type_info, type_info_size);
 
 			emit_push(is_addr ? VAL_LOCAL_ADDR : VAL_LOCAL, offs, size);
@@ -611,7 +611,7 @@ void parse_primary_expr() {
 			type_info_size = global_vars[id][0];
 			memcpy(type_info, &global_vars[id][1], type_info_size * sizeof(type_info[0]));
 
-			bool is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
+			int is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
 			emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
 		}
 		else {
@@ -645,7 +645,7 @@ void parse_postfix_expr() {
 
 			last_value_ref = nopcodes;
 			emit(OP_CALL);
-			int sizes[256] = {}; // size of the code generated for each parameter
+			int sizes[256] = { 0 }; // size of the code generated for each parameter
 			int call_header = emit(0);
 
 			int param_count = 0;
@@ -683,7 +683,7 @@ void parse_postfix_expr() {
 
 			parse_assignment_expr();
 
-			bool is_addr = item_type_info[item_type_info_size - 1] == DECL_ARRAY;
+			int is_addr = item_type_info[item_type_info_size - 1] == DECL_ARRAY;
 			last_value_ref = nopcodes;
 
 			emit(is_addr ? OP_DEREF_ADDR : OP_DEREF);
@@ -696,7 +696,7 @@ void parse_postfix_expr() {
 			memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
 		}
 		else if (token == T_INC || token == T_DEC) {
-			bool inc = token == T_INC;
+			int inc = token == T_INC;
 			next_token();
 
 			convert_to_addr(last_value_ref);
@@ -713,7 +713,7 @@ void parse_postfix_expr() {
 
 void parse_unary_expr() {
 	if (token == T_INC || token == T_DEC) {
-		bool inc = token == T_INC;
+		int inc = token == T_INC;
 		next_token();
 		
 		parse_unary_expr();
@@ -818,7 +818,7 @@ void parse_expr(int min_prec) {
 	int or_label = -1;
 	int and_label = -1;
 
-	while (true) {
+	while (1) {
 		int prec = op_prec(token);
 		if (prec < min_prec) break;
 
@@ -945,8 +945,8 @@ directDeclarator
 |   directDeclarator '(' parameterTypeList ')'
 | directDeclarator '(' identifierList? ')'
  */
-void parse_direct_declarator(char* id, bool* func) {
-	*func = false;
+void parse_direct_declarator(char* id, int* func) {
+	*func = 0;
 	if (!check_token(T_ID)) return;
 
 	strcpy(id, token_id);
@@ -955,7 +955,7 @@ void parse_direct_declarator(char* id, bool* func) {
 	int tmp_type_info_size = 0;
 	int tmp_type_info[63];
 
-	while (true) {
+	while (1) {
 		if (token == T_LBRACKET) {
 			next_token();
 
@@ -969,7 +969,7 @@ void parse_direct_declarator(char* id, bool* func) {
 			next_token();
 		}
 		else if (token == T_LPAREN) {
-			*func = true;
+			*func = 1;
 			start_func_decl(id);
 
 			parse_func_params();
@@ -992,7 +992,7 @@ void parse_declarator(int ctx) {
 	}
 
 	char id[256];
-	bool func;
+	int func;
 
 	parse_direct_declarator(id, &func);
 	if (func) {
@@ -1431,20 +1431,20 @@ void gen_cpool() {
 		int size = strlen(&cpool[i]) + 1;
 		printf("__str_%d db ", i);
 
-		bool quoted = false;
+		int quoted = 0;
 		for (int j = 0; j < size; ++j) {
 			char ch = cpool[i + j];
 			if (ch < ' ') {
 				if (quoted) printf("', ", ch);
 				else if (j != 0) printf(", ");
 				printf("%02XH", ch);
-				quoted = false;
+				quoted = 0;
 			}
 			else {
 				if (j != 0 && !quoted) printf(", '");
 				else if (!quoted) printf("'");
 				printf("%c", ch);
-				quoted = true;
+				quoted = 1;
 			}
 		}
 
