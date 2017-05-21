@@ -155,12 +155,15 @@ int emit(int);
 void emit_push(int val_type, int val, int size);
 
 char funcname[256];
+int stack_size;
+
+int nscopes;
+int scopes[64][8];
 
 int nparams;
 char params[256][64];
 
 int nlocals;
-int stack_size;
 char locals[256][64];
 int local_vars[256][64];
 
@@ -485,7 +488,7 @@ int next_token_helper() {
 	}
 
 
-	printf("Syntax error (%d): invalid token %c\n", lineno, ch);
+	fprintf(stderr, "Syntax error (%d): invalid token %c\n", lineno, ch);
 	return T_EOF;
 }
 
@@ -509,7 +512,7 @@ void parse_declaration(int);
 
 bool check_token(int expected) {
 	if (token != expected) {
-		printf("Syntax error (%d): unexpected token %s, expected %s\n", lineno, tok2str(token), tok2str(expected));
+		fprintf(stderr, "Syntax error (%d): unexpected token %s, expected %s\n", lineno, tok2str(token), tok2str(expected));
 		return false;
 	}
 	return true;
@@ -599,7 +602,7 @@ void parse_primary_expr() {
 			emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
 		}
 		else {
-			printf("Error (%d): unknown identifier %s\n", lineno, token_id);
+			fprintf(stderr, "Error (%d): unknown identifier %s\n", lineno, token_id);
 		}
 		next_token();
 		return;
@@ -824,7 +827,7 @@ void parse_expr(int min_prec) {
 		else if (op == T_EQ) emit(OP_EQ);
 		else if (op == T_NOT_EQ) emit(OP_NOT_EQ);
 		else {
-			printf("Internal error (%d): operator not supported %s\n", lineno, tok2str(op));
+			fprintf(stderr, "Internal error (%d): operator not supported %s\n", lineno, tok2str(op));
 		}
 	}
 
@@ -1146,6 +1149,9 @@ void parse_stmt() {
 	}
 
 	if (token == T_FOR) {
+		scopes[nscopes - 1][0] = nlocals;
+		scopes[nscopes++][0] = 0;
+
 		int startLabel = nlabels++;
 		int endLabel = nlabels++;
 
@@ -1197,6 +1203,7 @@ void parse_stmt() {
 		emit(OP_LABEL);
 		emit(endLabel);
 
+		nlocals = scopes[--nscopes - 1][0];
 		return;
 	}
 
@@ -1208,9 +1215,14 @@ void parse_stmt() {
 
 	//
 	if (token == T_LCURLY) {
+		scopes[nscopes - 1][0] = nlocals;
+		scopes[nscopes++][0] = 0;
+
 		next_token();
 
 		parse_stmts(T_RCURLY);
+
+		nlocals = scopes[--nscopes - 1][0];
 		return;
 	}
 
@@ -1277,6 +1289,10 @@ void start_func_body() {
 	nlocals = 0;
 	nlabels = 0;
 	stack_size = 0;
+
+	nscopes = 1;
+	scopes[0][0] = 0;
+
 	emit(OP_FUNC_PROLOGUE);
 }
 
@@ -1285,6 +1301,8 @@ void end_func() {
 
 	gen_code(0, nopcodes);
 	nopcodes = 0;
+	nlocals = 0;
+	--nscopes;
 }
 
 int add_param(const char* s) {
@@ -1304,7 +1322,7 @@ int add_local(const char* s) {
 }
 
 int get_local(const char* s) {
-	for (int i = 0; i < nlocals; ++i) {
+	for (int i = nlocals - 1; i >= 0; --i) {
 		if (!strcmp(locals[i], s)) return i;
 	}
 	return -1;
@@ -1792,6 +1810,7 @@ int main(int argc, char** argv) {
 	add_extern("printf");
 	add_extern("exit");
 	add_extern("strcpy");
+	add_extern("strcmp");
 
 	f = fopen(argv[1], "r");
 	gen_asm();
