@@ -38,7 +38,7 @@ goto :end
 
   rem echo.
   echo Run '%name%'
-  %CC% %input% > %name%.asm
+  %CC% %input% > %name%.asm 2> %name%.err
   if not %errorlevel% equ 0 (goto :fail)
 
   ML /c /nologo /Sg /Zi  /W3 /errorReport:prompt  /Ta %name%.asm >NUL

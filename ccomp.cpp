@@ -128,6 +128,7 @@ enum {
 	, OP_INC_POST
 	, OP_DEC_POST
 	, OP_NOT
+	, OP_NEG
 };
 
 enum {
@@ -149,7 +150,7 @@ enum {
 
 
 int nopcodes = 0;
-int opcodes[1024];
+int opcodes[65536];
 
 int emit(int);
 void emit_push(int val_type, int val, int size);
@@ -720,6 +721,25 @@ void parse_unary_expr() {
 
 		last_value_ref = nopcodes;
 		emit(OP_NOT);
+
+		set_type_placeholder();
+		return;
+	}
+	if (token == T_ADD) {
+		next_token();
+		
+		parse_unary_expr();
+
+		set_type_placeholder();
+		return;
+	}
+	if (token == T_SUB) {
+		next_token();
+
+		parse_unary_expr();
+
+		last_value_ref = nopcodes;
+		emit(OP_NEG);
 
 		set_type_placeholder();
 		return;
@@ -1685,6 +1705,11 @@ void gen_code(int from, int end) {
 			printf("  xor eax, eax\n");
 			printf("  cmp ecx, eax\n");
 			printf("  sete al\n");
+			printf("  push eax\n");
+		}
+		else if (op == OP_NEG){
+			printf("  pop eax\n");
+			printf("  neg eax\n");
 			printf("  push eax\n");
 		}
 	}

@@ -16,4 +16,7 @@ int main() {
 
 	// (expression)
 	printf("%d\n", (100));
+	
+	// unary -/+
+	printf("%d %d\n", -1, +1);
 }
