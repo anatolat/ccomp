@@ -623,73 +623,75 @@ void convert_to_addr(int ref) {
 void parse_postfix_expr() {
 	parse_primary_expr();
 
-	if (token == T_LPAREN) {
-		next_token();
+	while (token != T_EOF) {
+		if (token == T_LPAREN) {
+			next_token();
 
-		last_value_ref = nopcodes;
-		emit(OP_CALL);
-		int sizes[256] = {}; // size of the code generated for each parameter
-		int callHeader = emit(0);
+			last_value_ref = nopcodes;
+			emit(OP_CALL);
+			int sizes[256] = {}; // size of the code generated for each parameter
+			int call_header = emit(0);
 
-		int paramCount = 0;
-		while (token != T_RPAREN && token != T_EOF) {
-			sizes[paramCount++] = nopcodes;
+			int param_count = 0;
+			while (token != T_RPAREN && token != T_EOF) {
+				sizes[param_count++] = nopcodes;
+
+				parse_assignment_expr();
+
+				if (token == T_COMMA) {
+					next_token();
+					continue;
+				}
+			}
+
+			check_token(T_RPAREN);
+			next_token();
+
+			opcodes[call_header] = emit(param_count);
+			for (int i = 0; i < param_count; ++i) {
+				emit(sizes[i]);
+			}
+
+			set_type_placeholder();
+		}
+		else if (token == T_LBRACKET) {
+			next_token();
+
+			int item_type_info[64];
+			int item_type_info_size;
+
+			//dump_type(type_info, type_info_size);
+			get_item_type_info(item_type_info, &item_type_info_size, type_info, type_info_size);
+
+			convert_to_addr(last_value_ref);
 
 			parse_assignment_expr();
 
-			if (token == T_COMMA) {
-				next_token();
-				continue;
-			}
+			bool is_addr = item_type_info[item_type_info_size - 1] == DECL_ARRAY;
+			last_value_ref = nopcodes;
+
+			emit(is_addr ? OP_DEREF_ADDR : OP_DEREF);
+			emit(get_type_byte_size(item_type_info, item_type_info_size));
+
+			check_token(T_RBRACKET);
+			next_token();
+
+			type_info_size = item_type_info_size;
+			memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
 		}
+		else if (token == T_INC || token == T_DEC) {
+			bool inc = token == T_INC;
+			next_token();
 
-		check_token(T_RPAREN);
-		next_token();
+			convert_to_addr(last_value_ref);
 
-		opcodes[callHeader] = emit(paramCount);
-		for (int i = 0; i < paramCount; ++i) {
-			emit(sizes[i]);
+			last_value_ref = nopcodes;
+			emit(inc ? OP_INC_POST : OP_DEC_POST);
+
+			set_type_placeholder();
+			break;
 		}
-
-		set_type_placeholder();
-		return;
-	}
-
-	if (token == T_INC || token == T_DEC) {
-		bool inc = token == T_INC;
-		next_token();
-
-		convert_to_addr(last_value_ref);
-
-		last_value_ref = nopcodes;
-		emit(inc ? OP_INC_POST : OP_DEC_POST);
-
-		set_type_placeholder();
-		return;
-	}
-
-	if (token == T_LBRACKET) {
-		next_token();
-
-		int item_type_info[64];
-		int item_type_info_size;
-
-		get_item_type_info(item_type_info, &item_type_info_size, type_info, type_info_size);
-
-		convert_to_addr(last_value_ref);
-
-		parse_assignment_expr();
-
-		last_value_ref = nopcodes;
-		emit(OP_DEREF);
-		emit(get_type_byte_size(item_type_info, item_type_info_size));
-
-		check_token(T_RBRACKET);
-		next_token();
-
-		type_info_size = item_type_info_size;
-		memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
-		return;
+		else break;
 	}
 }
 
@@ -915,16 +917,19 @@ void parse_direct_declarator(char* id, bool* func) {
 	strcpy(id, token_id);
 	next_token();
 	
+	int tmp_type_info_size = 0;
+	int tmp_type_info[63];
+
 	while (true) {
 		if (token == T_LBRACKET) {
 			next_token();
 
 			check_token(T_INT_LIT);
-			type_info[type_info_size++] = token_num;
-			type_info[type_info_size++] = DECL_ARRAY;
+			tmp_type_info[tmp_type_info_size++] = DECL_ARRAY;
+			tmp_type_info[tmp_type_info_size++] = token_num;
+
 			next_token();
 
-			
 			check_token(T_RBRACKET);
 			next_token();
 		}
@@ -935,6 +940,10 @@ void parse_direct_declarator(char* id, bool* func) {
 			parse_func_params();
 		}
 		else break;
+	}
+
+	for (int i = tmp_type_info_size - 1; i >= 0; --i) {
+		type_info[type_info_size++] = tmp_type_info[i];
 	}
 }
 
@@ -1465,17 +1474,17 @@ void gen_code(int from, int end) {
 			printf("%s endp\n\n", funcname);
 		}
 		else if (op == OP_PUSH) {
-			int valueType = opcodes[i++];
+			int value_type = opcodes[i++];
 			int value = opcodes[i++];
 			int size = opcodes[i++];
 
-			if (valueType == VAL_STR) {
+			if (value_type == VAL_STR) {
 				printf("  push OFFSET __str_%d\n", value);
 			}
-			else if (valueType == VAL_INT) {
+			else if (value_type == VAL_INT) {
 				printf("  push %d\n", value);
 			}
-			else if (valueType == VAL_LOCAL) {
+			else if (value_type == VAL_LOCAL) {
 				if (value >= 0) {
 					printf("  mov eax, DWORD PTR [ebp]+%d\n", value);
 				}
@@ -1500,7 +1509,7 @@ void gen_code(int from, int end) {
 				}
 				printf("  push eax\n", value);
 			}
-			else if (valueType == VAL_LOCAL_ADDR) {
+			else if (value_type == VAL_LOCAL_ADDR) {
 				if (value >= 0) {
 					printf("  lea eax, DWORD PTR [ebp]+%d \n", value);
 				}
@@ -1510,14 +1519,14 @@ void gen_code(int from, int end) {
 
 				printf("  push eax\n", value);
 			}
-			else if (valueType == VAL_EXTERN) {
+			else if (value_type == VAL_EXTERN) {
 				printf("  push OFFSET %s\n", externs[value]);
 			}
-			else if (valueType == VAL_GLOB) {
+			else if (value_type == VAL_GLOB) {
 				printf("  mov eax, DWORD PTR %s\n", globals[value]);
 				printf("  push eax\n", value);
 			}
-			else if (valueType == VAL_GLOB_ADDR) {
+			else if (value_type == VAL_GLOB_ADDR) {
 				printf("  push OFFSET %s\n", globals[value]);
 			}
 		}
@@ -1525,14 +1534,16 @@ void gen_code(int from, int end) {
 			int item_size = opcodes[i++];
 			printf("  pop ecx\n");
 			printf("  pop eax\n");
-			printf("  mov eax, DWORD PTR [eax + ecx*%d]\n", item_size);
+			printf("  imul ecx, %d\n", item_size);
+			printf("  mov eax, DWORD PTR [eax + ecx]\n");
 			printf("  push eax\n");
 		}
 		else if (op == OP_DEREF_ADDR) {
 			int item_size = opcodes[i++];
 			printf("  pop ecx\n");
 			printf("  pop eax\n");
-			printf("  lea eax, DWORD PTR [eax + ecx*%d]\n", item_size);
+			printf("  imul ecx, %d\n", item_size);
+			printf("  lea eax, DWORD PTR [eax + ecx]\n");
 			printf("  push eax\n");
 		}
 		else if (op == OP_SAVE) {
@@ -1569,12 +1580,12 @@ void gen_code(int from, int end) {
 		else if (op == OP_FOR) {
 			// post increment instructions after body
 
-			int incrementEnd = opcodes[i++];
-			int bodyEnd = opcodes[i++];
-			gen_code(incrementEnd, bodyEnd);
-			gen_code(i, incrementEnd);
+			int increment_end = opcodes[i++];
+			int body_end = opcodes[i++];
+			gen_code(increment_end, body_end);
+			gen_code(i, increment_end);
 			
-			i = bodyEnd;
+			i = body_end;
 		}
 		else if (op == OP_JMP) {
 			int label = opcodes[i++];
@@ -1665,8 +1676,9 @@ void gen_asm() {
 	// header
 	printf(".586\n");
 	printf(".model flat, c\n\n");
-	printf("INCLUDELIB MSVCRTD\n");
+	printf("includelib msvcrtd\n");
 	printf("printf PROTO C :VARARG\n");
+	printf("strcpy PROTO C\n");
 
 	printf(".code\n\n");
 
@@ -1779,6 +1791,7 @@ int main(int argc, char** argv) {
 	add_extern("ungetc");
 	add_extern("printf");
 	add_extern("exit");
+	add_extern("strcpy");
 
 	f = fopen(argv[1], "r");
 	gen_asm();

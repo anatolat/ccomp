@@ -8,6 +8,7 @@ int main() {
 		str_glob[i] = ch;
 		str_local[i] = ch;
 	}
+        str_local[26] = 0;
 
 	printf("%s\n", str_glob);
 	printf("%s\n", str_local);
