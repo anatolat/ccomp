@@ -1,18 +1,10 @@
 
-int main() {
-	int i = 11;
-	{
-		int i = 13;
-		printf("%d\n", i);
-	}
-	printf("%d\n", i);
-	{
-		int i = 13;
-		printf("%d\n", i);
-	}
-	printf("%d\n", i);
 
-	for(int i = 15; 0;) printf("%d\n", i);
-
-	printf("%d\n", i);
+int main()  {
+	for (int i = 0; i < 10; ++i) {
+		if (i == 5) break;
+		if (i == 3) continue;
+		printf("%d ", i);
+	}
+	printf("\n");
 }

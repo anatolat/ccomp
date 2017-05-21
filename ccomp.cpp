@@ -2,12 +2,9 @@
 #include <stdio.h>
 #include <cstring>
 
-// expressions: assignment, ident, plus, call function, nums
-// 
-
 enum {
 	T_EOF
-	, T_ID 
+	, T_ID
 	, T_TYPEID
 	, T_CHAR_LIT
 	, T_INT_LIT
@@ -57,6 +54,8 @@ enum {
 	, T_WHILE
 	, T_DO
 	, T_FOR
+	, T_BREAK
+	, T_CONTINUE
 };
 
 FILE* f;
@@ -161,6 +160,11 @@ int stack_size;
 int nscopes;
 int scopes[64][8];
 
+void start_scope(int breakLabel, int continueLabel);
+void end_scope();
+int find_break_label();
+int find_continue_label();
+
 int nparams;
 char params[256][64];
 
@@ -261,6 +265,8 @@ const char* tok2str(int tok) {
 	case T_WHILE: return "WHILE";
 	case T_DO: return "DO";
 	case T_FOR: return "FOR";
+	case T_BREAK: return "BREAK";
+	case T_CONTINUE: return "CONTINUE";
 	}
 	return "XXX";
 }
@@ -423,6 +429,12 @@ int next_token_helper() {
 		}
 		else if (!strcmp(token_id, "else")) {
 			t = T_ELSE;
+		}
+		else if (!strcmp(token_id, "break")) {
+			t = T_BREAK;
+		}
+		else if (!strcmp(token_id, "continue")) {
+			t = T_CONTINUE;
 		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
@@ -1074,41 +1086,44 @@ void parse_stmt() {
 
 		check_token(T_RPAREN);
 
-		int noteqLabel = nlabels++;
+		int noteq_label = nlabels++;
 		emit(OP_JMPZ);
-		emit(noteqLabel);
+		emit(noteq_label);
 
 		next_token();
 		parse_stmt();
 
-		int endLabel;
+		int end_label;
 		if (token == T_ELSE) {
-			endLabel = nlabels++;
+			end_label = nlabels++;
 			emit(OP_JMP);
-			emit(endLabel);
+			emit(end_label);
 
 			emit(OP_LABEL);
-			emit(noteqLabel);
+			emit(noteq_label);
 
 			next_token();
 
 			parse_stmt();
 		} 
 		else {
-			endLabel = noteqLabel;
+			end_label = noteq_label;
 		}
 
 		emit(OP_LABEL);
-		emit(endLabel);
+		emit(end_label);
 
 		return;
 	}
 
 	if (token == T_WHILE) {
-		int startLabel = nlabels++;
-		int endLabel = nlabels++;
+		int start_label = nlabels++;
+		int end_label = nlabels++;
+
+		start_scope(end_label, start_label);
+
 		emit(OP_LABEL);
-		emit(startLabel);
+		emit(start_label);
 
 		parse_token(T_LPAREN);
 
@@ -1119,26 +1134,31 @@ void parse_stmt() {
 		next_token();
 		
 		emit(OP_JMPZ);
-		emit(endLabel);
+		emit(end_label);
 
 		parse_stmt();
 
 		emit(OP_JMP);
-		emit(startLabel);
+		emit(start_label);
 
 		emit(OP_LABEL);
-		emit(endLabel);
+		emit(end_label);
 
+		end_scope();
 		return;
 	}
 
 	if (token == T_DO) {
 		next_token();
 
-		int startLabel = nlabels++;
-		int endLabel = nlabels++;
+		int start_label = nlabels++;
+		int end_label = nlabels++;
+		int continue_label = nlabels++;
+
+		start_scope(end_label, continue_label);
+
 		emit(OP_LABEL);
-		emit(startLabel);
+		emit(start_label);
 
 		parse_stmt();
 
@@ -1147,6 +1167,9 @@ void parse_stmt() {
 
 		check_token(T_LPAREN);
 		next_token();
+
+		emit(OP_LABEL);
+		emit(continue_label);
 
 		parse_assignment_expr();
 
@@ -1157,23 +1180,25 @@ void parse_stmt() {
 		next_token();
 
 		emit(OP_JMPZ);
-		emit(endLabel);
+		emit(end_label);
 
 		emit(OP_JMP);
-		emit(startLabel);
+		emit(start_label);
 
 		emit(OP_LABEL);
-		emit(endLabel);
+		emit(end_label);
+
+		end_scope();
 
 		return;
 	}
 
 	if (token == T_FOR) {
-		scopes[nscopes - 1][0] = nlocals;
-		scopes[nscopes++][0] = 0;
+		int start_label = nlabels++;
+		int end_label = nlabels++;
+		int continue_label = nlabels++;
 
-		int startLabel = nlabels++;
-		int endLabel = nlabels++;
+		start_scope(end_label, continue_label);
 
 		parse_token(T_LPAREN);
 		next_token();
@@ -1189,41 +1214,66 @@ void parse_stmt() {
 		next_token();
 
 		emit(OP_LABEL);
-		emit(startLabel);
+		emit(start_label);
 
 		if (token != T_SEMI) {
 			parse_assignment_expr();
 		}
 
 		emit(OP_JMPZ);
-		emit(endLabel);
+		emit(end_label);
 
 		check_token(T_SEMI);
 		next_token();
 
 		emit(OP_FOR);
-		int incrementEndRef = emit(0);
-		int bodyEndRef = emit(0);
+		int increment_end = emit(0);
+		int body_end = emit(0);
+
+		emit(OP_LABEL);
+		emit(continue_label);
 
 		if (token != T_RPAREN) {
 			parse_assignment_expr();
 		}
-		opcodes[incrementEndRef] = nopcodes;
+		opcodes[increment_end] = nopcodes;
 
 		check_token(T_RPAREN);
 		next_token();
 
 		parse_stmt();
 
-		opcodes[bodyEndRef] = nopcodes;
+		opcodes[body_end] = nopcodes;
 
 		emit(OP_JMP);
-		emit(startLabel);
+		emit(start_label);
 
 		emit(OP_LABEL);
-		emit(endLabel);
+		emit(end_label);
 
-		nlocals = scopes[--nscopes - 1][0];
+		end_scope();
+		return;
+	}
+
+	if (token == T_BREAK) {
+		next_token();
+
+		emit(OP_JMP);
+		emit(find_break_label());
+
+		check_token(T_SEMI);
+		next_token();
+		return;
+	}
+
+	if (token == T_CONTINUE) {
+		next_token();
+
+		emit(OP_JMP);
+		emit(find_continue_label());
+
+		check_token(T_SEMI);
+		next_token();
 		return;
 	}
 
@@ -1235,14 +1285,13 @@ void parse_stmt() {
 
 	//
 	if (token == T_LCURLY) {
-		scopes[nscopes - 1][0] = nlocals;
-		scopes[nscopes++][0] = 0;
+		start_scope(-1, -1);
 
 		next_token();
 
 		parse_stmts(T_RCURLY);
 
-		nlocals = scopes[--nscopes - 1][0];
+		end_scope();
 		return;
 	}
 
@@ -1310,8 +1359,7 @@ void start_func_body() {
 	nlabels = 0;
 	stack_size = 0;
 
-	nscopes = 1;
-	scopes[0][0] = 0;
+	start_scope(-1, -1);
 
 	emit(OP_FUNC_PROLOGUE);
 }
@@ -1321,8 +1369,7 @@ void end_func() {
 
 	gen_code(0, nopcodes);
 	nopcodes = 0;
-	nlocals = 0;
-	--nscopes;
+	end_scope();
 }
 
 int add_param(const char* s) {
@@ -1822,6 +1869,42 @@ void set_type_placeholder() {
 	type_info_size = 0;
 	type_info[type_info_size++] = TYPE_INT;
 	type_info[type_info_size++] = DECL_BASIC;
+}
+
+void start_scope(int breakLabel, int continueLabel) {
+	if (nscopes > 0)  {
+		scopes[nscopes - 1][0] = nlocals;
+	}
+	scopes[nscopes][0] = 0;
+	scopes[nscopes][1] = breakLabel;
+	scopes[nscopes][2] = continueLabel;
+	++nscopes;
+}
+
+void end_scope() {
+	--nscopes;
+	
+	if (nscopes > 0) {
+		nlocals = scopes[nscopes - 1][0];
+	}
+	else {
+		nlocals = 0;
+	}
+}
+
+int find_break_label() {
+	for (int i = nscopes - 1; i >= 0; --i) {
+		if (scopes[i][1] != -1) return scopes[i][1];
+	}
+
+	return -1;
+}
+int find_continue_label() {
+	for (int i = nscopes - 1; i >= 0; --i) {
+		if (scopes[i][2] != -1) return scopes[i][2];
+	}
+
+	return -1;
 }
 
 int main(int argc, char** argv) {
