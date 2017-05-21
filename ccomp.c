@@ -1007,6 +1007,8 @@ void parse_declarator(int ctx) {
 		else {
 			check_token(T_SEMI);
 			next_token();
+
+			funcname[0] = 0;
 		}
 
 	}
@@ -1070,9 +1072,17 @@ void parse_stmt() {
 
 	if (token == T_RETURN) {
 		next_token();
-		parse_assignment_expr();
+
+		if (token == T_SEMI) {
+			emit_push(VAL_INT, 0, 0);
+		}
+		else {
+			parse_assignment_expr();
+		}
+
 		check_token(T_SEMI);
 		next_token();
+
 
 		emit(OP_RETURN);
 		return;
@@ -1919,6 +1929,8 @@ int main(int argc, char** argv) {
 	add_extern("exit");
 	add_extern("strcpy");
 	add_extern("strcmp");
+	add_extern("strlen");
+	add_extern("memcpy");
 
 	f = fopen(argv[1], "r");
 	gen_asm();

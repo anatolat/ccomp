@@ -24,7 +24,8 @@ test_strs.c ^
 100doors_simplified.c ^
 test_strs2.c ^
 test_scopes.c ^
-test_break_continue.c
+test_break_continue.c ^
+test_return.c
 
 ) else (
   set src=%1
