@@ -66,16 +66,21 @@ int token_num;
 int lineno;
 
 int ntypes = 3;
+enum {
+	TYPE_VOID,
+	TYPE_CHAR,
+	TYPE_INT
+};
+
 char* types[256] = {
 	"void",
 	"char",
 	"int",
 };
-
-char* types_asm[256] = {
-	"",
-	"db",
-	"dd",
+int types_sizes[256] = {
+	0,
+	1,
+	4,
 };
 
 // cpool
@@ -137,9 +142,9 @@ enum {
 
 
 enum {
-	TYPE_ARRAY = 1,
-	TYPE_PTR,
-	TYPE_BASIC
+	DECL_ARRAY = 1,
+	DECL_PTR,
+	DECL_BASIC
 };
 
 
@@ -147,6 +152,7 @@ int nopcodes = 0;
 int opcodes[1024];
 
 int emit(int);
+void emit_push(int val_type, int val, int size);
 
 char funcname[256];
 
@@ -176,6 +182,8 @@ void dump_type(int* type_info, int size);
 int get_basic_type(int* type_info, int size);
 int get_type_array_size(int* type_info, int size);
 int get_type_byte_size(int* type_info, int size);
+void get_item_type_info(int* dest_type_info, int* dest_size, int* type_info, int type_info_size);
+void set_type_placeholder();
 
 int add_extern(const char* s);
 int add_param(const char* s);
@@ -193,8 +201,6 @@ void end_func();
 // end
 
 // asmgen
-void gen_func_prologue(const char* name);
-void gen_func_epilogue(const char* name);
 void gen_code(int from, int end);
 // end
 
@@ -522,26 +528,33 @@ bool try_parse_token(int expected) {
 void parse_primary_expr() {
 	last_value_ref = nopcodes;
 	if (token == T_INT_LIT) {		
-		emit(OP_PUSH); 
-		emit(VAL_INT);
-		emit(token_num);
+		emit_push(VAL_INT, token_num, 0);
+
+		type_info_size = 0;
+		type_info[type_info_size++] = TYPE_INT;
+		type_info[type_info_size++] = DECL_BASIC;
 
 		next_token();
 		return;
 	}
 	if (token == T_STR_LIT) {
 		int cid = add_const(token_id);
-		emit(OP_PUSH);
-		emit(VAL_STR);
-		emit(cid);
+		emit_push(VAL_STR, cid, 0);
+
+		type_info_size = 0;
+		type_info[type_info_size++] = TYPE_CHAR;
+		type_info[type_info_size++] = DECL_BASIC;
+		type_info[type_info_size++] = DECL_PTR;
 
 		next_token();
 		return;
 	}
 	if (token == T_CHAR_LIT) {
-		emit(OP_PUSH);
-		emit(VAL_INT);
-		emit(token_num);
+		emit_push(VAL_INT, token_num, 0);
+
+		type_info_size = 0;
+		type_info[type_info_size++] = TYPE_INT;
+		type_info[type_info_size++] = DECL_BASIC;
 
 		next_token();
 		return;
@@ -560,24 +573,31 @@ void parse_primary_expr() {
 		if (id != -1) {
 			int offs = local_vars[id][0];
 
-			emit(OP_PUSH);
-			emit(VAL_LOCAL);
-			emit(offs);
+			type_info_size = local_vars[id][1];
+			memcpy(type_info, &local_vars[id][2], type_info_size * sizeof(type_info[0]));
+
+			bool is_addr = type_info[type_info_size - 1] != DECL_BASIC;
+			int size = get_type_byte_size(type_info, type_info_size);
+
+			emit_push(is_addr ? VAL_LOCAL_ADDR : VAL_LOCAL, offs, size);
 		}
 		else if ((id = get_param(token_id)) != -1) {
-			emit(OP_PUSH);
-			emit(VAL_LOCAL);
-			emit(4 * (id + 2));
+			emit_push(VAL_LOCAL, 4 * (id + 2), 0);
+
+			set_type_placeholder();
 		}
 		else if ((id = get_extern(token_id)) != -1) {
-			emit(OP_PUSH);
-			emit(VAL_EXTERN);
-			emit(id);
+			emit_push(VAL_EXTERN, id, 0);
+
+			set_type_placeholder();
 		}
 		else if ((id = get_global(token_id)) != -1) {
-			emit(OP_PUSH);
-			emit(VAL_GLOB);
-			emit(id);
+			bool is_addr = type_info[type_info_size - 1] != DECL_BASIC;
+
+			type_info_size = global_vars[id][0];
+			memcpy(type_info, &global_vars[id][1], type_info_size * sizeof(type_info[0]));
+
+			emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
 		}
 		else {
 			printf("Error (%d): unknown identifier %s\n", lineno, token_id);
@@ -631,6 +651,8 @@ void parse_postfix_expr() {
 		for (int i = 0; i < paramCount; ++i) {
 			emit(sizes[i]);
 		}
+
+		set_type_placeholder();
 		return;
 	}
 
@@ -642,11 +664,18 @@ void parse_postfix_expr() {
 
 		last_value_ref = nopcodes;
 		emit(inc ? OP_INC_POST : OP_DEC_POST);
+
+		set_type_placeholder();
 		return;
 	}
 
 	if (token == T_LBRACKET) {
 		next_token();
+
+		int item_type_info[64];
+		int item_type_info_size;
+
+		get_item_type_info(item_type_info, &item_type_info_size, type_info, type_info_size);
 
 		convert_to_addr(last_value_ref);
 
@@ -654,9 +683,14 @@ void parse_postfix_expr() {
 
 		last_value_ref = nopcodes;
 		emit(OP_DEREF);
+		emit(get_type_byte_size(item_type_info, item_type_info_size));
 
 		check_token(T_RBRACKET);
 		next_token();
+
+		type_info_size = item_type_info_size;
+		memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
+		return;
 	}
 }
 
@@ -671,6 +705,8 @@ void parse_unary_expr() {
 		last_value_ref = nopcodes;
 
 		emit(inc ? OP_INC : OP_DEC);
+
+		set_type_placeholder();
 		return;
 	}
 	if (token == T_NOT) {
@@ -680,6 +716,8 @@ void parse_unary_expr() {
 
 		last_value_ref = nopcodes;
 		emit(OP_NOT);
+
+		set_type_placeholder();
 		return;
 	}
 	
@@ -761,11 +799,14 @@ void parse_expr(int min_prec) {
 		}
 
 		int lvalue_ref = last_value_ref;
+		int lvalue_size = get_type_byte_size(type_info, type_info_size);
+
 		parse_expr(prec == 1 ? prec : prec + 1);
 
 		if (op == T_ASSIGNMENT) {
 			convert_to_addr(lvalue_ref);
 			emit(OP_SAVE);
+			emit(lvalue_size);
 		}
 		else if (op == T_OR || op == T_AND) {
 			// do nothing
@@ -788,9 +829,7 @@ void parse_expr(int min_prec) {
 
 	if (or_label != -1) {
 		emit_or_jump(or_label);
-		emit(OP_PUSH);
-		emit(VAL_INT);
-		emit(0);
+		emit_push(VAL_INT, 0, 0);
 
 		int end = nlabels++;
 		emit(OP_JMP);
@@ -799,9 +838,7 @@ void parse_expr(int min_prec) {
 		emit(OP_LABEL);
 		emit(or_label);
 
-		emit(OP_PUSH);
-		emit(VAL_INT);
-		emit(1);
+		emit_push(VAL_INT, 1, 0);
 
 		emit(OP_LABEL);
 		emit(end);
@@ -809,9 +846,7 @@ void parse_expr(int min_prec) {
 
 	if (and_label != -1) {
 		emit_and_jump(and_label);
-		emit(OP_PUSH);
-		emit(VAL_INT);
-		emit(1);
+		emit_push(VAL_INT, 1, 0);
 
 		int end = nlabels++;
 		emit(OP_JMP);
@@ -820,9 +855,7 @@ void parse_expr(int min_prec) {
 		emit(OP_LABEL);
 		emit(and_label);
 
-		emit(OP_PUSH);
-		emit(VAL_INT);
-		emit(0);
+		emit_push(VAL_INT, 0, 0);
 
 		emit(OP_LABEL);
 		emit(end);
@@ -854,10 +887,9 @@ void parse_decl_spec() {
 	
 	type_info_size = 0;
 	type_info[type_info_size++] = token_num;
-	type_info[type_info_size++] = TYPE_BASIC;
+	type_info[type_info_size++] = DECL_BASIC;
 
 }
-
 
 // declaration_specifiers
 void parse_decl_specs() {
@@ -890,7 +922,7 @@ void parse_direct_declarator(char* id, bool* func) {
 
 			check_token(T_INT_LIT);
 			type_info[type_info_size++] = token_num;
-			type_info[type_info_size++] = TYPE_ARRAY;
+			type_info[type_info_size++] = DECL_ARRAY;
 			next_token();
 
 			
@@ -911,7 +943,7 @@ void parse_direct_declarator(char* id, bool* func) {
 void parse_declarator(int ctx) {
 	// pointer
 	while (token == T_MUL) {
-		type_info[type_info_size++] = TYPE_PTR;
+		type_info[type_info_size++] = DECL_PTR;
 		
 		next_token();
 	}
@@ -959,16 +991,16 @@ void parse_declarator(int ctx) {
 		if (token == T_ASSIGNMENT && ctx != DECL_CTX_PARAM) {
 			next_token();
 
-			emit(OP_PUSH);
-			emit(VAL_LOCAL_ADDR);
-
 			int index = get_local(id);
 			int offset = local_vars[index][0];
-			emit(offset);
+			int size = get_type_byte_size(type_info, type_info_size);
+
+			emit_push(VAL_LOCAL_ADDR, offset, size);
 
 			parse_assignment_expr();
 
 			emit(OP_SAVE);
+			emit(size);
 		}
 
 		if (ctx == DECL_CTX_DEFAULT) {
@@ -1218,6 +1250,13 @@ int emit(int op) {
 	return nopcodes - 1;
 }
 
+void emit_push(int val_type, int val, int size) {
+	emit(OP_PUSH);
+	emit(val_type);
+	emit(val);
+	emit(size);
+}
+
 void start_func_decl(const char* s) {
 	strcpy(funcname, s);
 
@@ -1323,6 +1362,18 @@ void gen_cpool() {
 	printf("\n");
 }
 
+const char* get_basic_type_asm_name(int size) {
+	switch (size) {
+	case 1:
+		return "db";
+	case 2:
+		return "dw";
+	case 4:
+		return "dd";
+	}
+	return 0;
+}
+
 void gen_globals() {
 	// public section
 	for (int i = 0; i < nglobals; ++i) {
@@ -1334,13 +1385,16 @@ void gen_globals() {
 		int* type_info = &global_vars[i][1];
 		int type_info_size = global_vars[i][0];
 		int basic_type = get_basic_type(type_info, type_info_size);
+		const char* basic_type_name = get_basic_type_asm_name(types_sizes[basic_type]);
+
 		int array_size = get_type_array_size(type_info, type_info_size);
 
-		if (type_info[type_info_size - 1] == TYPE_ARRAY) {
-			printf("%s %s %d dup (0)\n", globals[i], types_asm[basic_type], array_size);
+		
+		if (type_info[type_info_size - 1] == DECL_ARRAY) {
+			printf("%s %s %d dup (0)\n", globals[i], basic_type_name, array_size);
 		}
 		else {
-			printf("%s %s 0\n", globals[i], types_asm[basic_type]);
+			printf("%s %s 0\n", globals[i], basic_type_name);
 		}
 	}
 	printf("\n");
@@ -1363,6 +1417,38 @@ void emit_asm_binop(const char* op) {
 	printf("  push ecx\n");
 }
 
+const char* get_asm_type(int size) {
+	switch (size) {
+	case 1:
+		return "BYTE";
+
+	case 2:
+		return "WORD";
+
+	case 4:
+		return "DWORD";
+
+	default:
+		return "XXX";
+	}
+}
+
+const char* get_asm_reg(int size) {
+	switch (size) {
+	case 1:
+		return "al";
+
+	case 2:
+		return "ax";
+
+	case 4:
+		return "eax";
+
+	default:
+		return "xxx";
+	}
+}
+
 void gen_code(int from, int end) {
 	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
@@ -1382,6 +1468,7 @@ void gen_code(int from, int end) {
 		else if (op == OP_PUSH) {
 			int valueType = opcodes[i++];
 			int value = opcodes[i++];
+			int size = opcodes[i++];
 
 			if (valueType == VAL_STR) {
 				printf("  push OFFSET __str_%d\n", value);
@@ -1391,12 +1478,28 @@ void gen_code(int from, int end) {
 			}
 			else if (valueType == VAL_LOCAL) {
 				if (value >= 0) {
-					printf("  mov eax, DWORD PTR [ebp]+%d \n", value);
+					printf("  mov eax, DWORD PTR [ebp]+%d\n", value);
 				}
 				else {
-					printf("  mov eax, DWORD PTR [ebp]%d \n", value);
+					const char *instr = "XXX";
+					switch (size) {
+					case 1:
+						instr = "movsx eax, BYTE PTR";
+						break;
+
+					case 2:
+						instr = "movsx eax, WORD PTR";
+						break;
+
+					case 4:
+						instr = "mov eax, DWORD PTR";
+						break;
+					}
+
+					printf("  %s [ebp]%d\n", instr, value);
+					
 				}
-				printf("  push eax \n", value);
+				printf("  push eax\n", value);
 			}
 			else if (valueType == VAL_LOCAL_ADDR) {
 				if (value >= 0) {
@@ -1416,43 +1519,46 @@ void gen_code(int from, int end) {
 				printf("  push eax\n", value);
 			}
 			else if (valueType == VAL_GLOB_ADDR) {
-				printf("  lea eax, DWORD PTR %s\n", globals[value]);
-				printf("  push eax\n", value);
+				printf("  push OFFSET %s\n", globals[value]);
 			}
 		}
 		else if (op == OP_DEREF) {
+			int item_size = opcodes[i++];
 			printf("  pop ecx\n");
 			printf("  pop eax\n");
-			printf("  mov eax, DWORD PTR [eax + ecx*4]\n");
+			printf("  mov eax, DWORD PTR [eax + ecx*%d]\n", item_size);
 			printf("  push eax\n");
 		}
 		else if (op == OP_DEREF_ADDR) {
+			int item_size = opcodes[i++];
 			printf("  pop ecx\n");
 			printf("  pop eax\n");
-			printf("  lea eax, DWORD PTR [eax + ecx*4]\n");
+			printf("  lea eax, DWORD PTR [eax + ecx*%d]\n", item_size);
 			printf("  push eax\n");
 		}
 		else if (op == OP_SAVE) {
+			int size = opcodes[i++];
+
 			printf("  pop eax\n");
 			printf("  pop ecx\n");
-			printf("  mov  DWORD PTR [ecx], eax\n");
+			printf("  mov %s PTR [ecx], %s\n", get_asm_type(size), get_asm_reg(size));
 		}
 		else if (op == OP_CALL) {
-			int headerRef = opcodes[i];
-			int paramCount = opcodes[headerRef];
+			int header_ref = opcodes[i];
+			int param_count = opcodes[header_ref];
 
-			i = headerRef + paramCount + 1;
+			i = header_ref + param_count + 1;
 
-			int paramEnd = headerRef;
-			for (int param = paramCount - 1; param >= 0; --param) {
-				int paramOffset = opcodes[headerRef + param + 1];
+			int paramEnd = header_ref;
+			for (int param = param_count - 1; param >= 0; --param) {
+				int paramOffset = opcodes[header_ref + param + 1];
 				gen_code(paramOffset, paramEnd);
 
 				paramEnd = paramOffset;
 			}
 
 			// FIXME: support different parameter sizes
-			int st = paramCount * 4;
+			int st = param_count * 4;
 			printf("  call DWORD PTR [esp+%d]\n", st);
 			printf("  add esp, %d\n", st+4); // size of paremters + pointer to function
 			printf("  push eax\n");
@@ -1584,15 +1690,15 @@ void dump_type(int* type_info, int size) {
 
 	for (int i = size - 1; i >= 0; --i) {
 		switch (type_info[i]) {
-		case TYPE_ARRAY:
+		case DECL_ARRAY:
 			printf("[%d] of ", type_info[--i]);
 			break;
 
-		case TYPE_PTR:
+		case DECL_PTR:
 			printf("ptr to ");
 			break;
 
-		case TYPE_BASIC:
+		case DECL_BASIC:
 			printf("%s\n", types[type_info[--i]]);
 			break;
 		}
@@ -1603,16 +1709,16 @@ int get_type_byte_size(int* type_info, int size) {
 	int result = 1;
 	for (int i = size - 1; i >= 0; --i) {
 		switch (type_info[i]) {
-		case TYPE_ARRAY:
+		case DECL_ARRAY:
 			result *= type_info[--i];
 			break;
 
-		case TYPE_PTR:
+		case DECL_PTR:
 			result *= 4;
 			return result;
 
-		case TYPE_BASIC:
-			result *= 4;
+		case DECL_BASIC:
+			result *= types_sizes[type_info[--i]];
 			return result;
 		}
 	}
@@ -1624,12 +1730,12 @@ int get_type_array_size(int* type_info, int size) {
 	int result = 1;
 	for (int i = size - 1; i >= 0; --i) {
 		switch (type_info[i]) {
-		case TYPE_ARRAY:
+		case DECL_ARRAY:
 			result *= type_info[--i];
 			break;
 
-		case TYPE_PTR:
-		case TYPE_BASIC:
+		case DECL_PTR:
+		case DECL_BASIC:
 			return result;
 		}
 	}
@@ -1639,6 +1745,29 @@ int get_type_array_size(int* type_info, int size) {
 
 int get_basic_type(int* type_info, int size) {
 	return type_info[0];
+}
+
+void get_item_type_info(int* dest_type_info, int* dest_size, int* type_info, int type_info_size) {
+	switch (type_info[type_info_size - 1]) {
+	case DECL_ARRAY:
+		*dest_size = type_info_size - 2;
+		break;
+
+	case DECL_PTR:
+		*dest_size = type_info_size - 1;
+		break;
+
+	case DECL_BASIC:
+		*dest_size = type_info_size;
+		break;
+	}
+	memcpy(dest_type_info, type_info, *dest_size * sizeof(type_info[0]));
+}
+
+void set_type_placeholder() {
+	type_info_size = 0;
+	type_info[type_info_size++] = TYPE_INT;
+	type_info[type_info_size++] = DECL_BASIC;
 }
 
 int main(int argc, char** argv) {

@@ -1,14 +1,9 @@
 
-
-int main() {
-	int ar[5];
-
-	int i = 0;
-	ar[i] = 42;
-
-        printf("%d", ar[0]);
-	
-	//for (int i = 0; i < 5; ++i) printf("%d", ar[i]);
-	
+void test_params(int a, int b) {
+	printf("%d %d\n", a, b);
 }
 
+
+int main() {
+	test_params(5, 7);
+}

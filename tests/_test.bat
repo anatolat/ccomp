@@ -15,7 +15,8 @@ test_expr.c ^
 test_if_else.c ^
 fizzbuzz.c ^
 test_array.c ^
-test_array_local.c
+test_array_local.c ^
+test_array_chars.c
 
 ) else (
   set src=%1
