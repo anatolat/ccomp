@@ -1,11 +1,7 @@
 // TODO
-// - ignore include
-// - comments
-// - ! array
-// - ! char
-// - for loops
-// - prefix increment
-// - 
+// - array init
+// - assignment_add
+// - ternary operator
 
 
 #include <stdio.h>

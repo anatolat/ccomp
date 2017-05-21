@@ -576,7 +576,7 @@ void parse_primary_expr() {
 			type_info_size = local_vars[id][1];
 			memcpy(type_info, &local_vars[id][2], type_info_size * sizeof(type_info[0]));
 
-			bool is_addr = type_info[type_info_size - 1] != DECL_BASIC;
+			bool is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
 			int size = get_type_byte_size(type_info, type_info_size);
 
 			emit_push(is_addr ? VAL_LOCAL_ADDR : VAL_LOCAL, offs, size);
@@ -592,11 +592,10 @@ void parse_primary_expr() {
 			set_type_placeholder();
 		}
 		else if ((id = get_global(token_id)) != -1) {
-			bool is_addr = type_info[type_info_size - 1] != DECL_BASIC;
-
 			type_info_size = global_vars[id][0];
 			memcpy(type_info, &global_vars[id][1], type_info_size * sizeof(type_info[0]));
 
+			bool is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
 			emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
 		}
 		else {
