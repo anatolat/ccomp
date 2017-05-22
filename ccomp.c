@@ -901,11 +901,11 @@ void parse_expr(int min_prec) {
 		next_token();
 
 		if (op == T_OR) {
-			or_label = nlabels++;
+			if (or_label == -1) or_label = nlabels++;
 			emit_or_jump(or_label);
 		}
 		else if (op == T_AND) {
-			and_label = nlabels++;
+			if (and_label == -1) and_label = nlabels++;
 			emit_and_jump(and_label);
 		}
 
@@ -1533,7 +1533,7 @@ void gen_cpool() {
 		int quoted = 0;
 		for (int j = 0; j < size; ++j) {
 			char ch = cpool[i + j];
-			if (ch < ' ') {
+			if (ch < ' ' || ch == '\'') {
 				if (quoted) printf("', ", ch);
 				else if (j != 0) printf(", ");
 				printf("%02XH", ch);
@@ -1865,8 +1865,17 @@ void gen_asm() {
 	printf(".586\n");
 	printf(".model flat, c\n\n");
 	printf("includelib msvcrtd\n");
+	// FIXME: generate
 	printf("printf PROTO C :VARARG\n");
 	printf("strcpy PROTO C\n");
+	printf("strcmp PROTO C\n");
+	printf("strlen PROTO C\n");
+	printf("fgetc PROTO C\n");
+	printf("ungetc PROTO C\n");
+	printf("fopen PROTO C\n");
+	printf("fclose PROTO C\n");
+	printf("memcpy PROTO C\n");
+
 
 	printf(".code\n\n");
 

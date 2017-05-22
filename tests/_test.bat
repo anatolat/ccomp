@@ -29,7 +29,8 @@ test_return.c ^
 test_ptr.c ^
 test_compound_assignment.c ^
 test_ptr_char.c ^
-test_compound_assignment_ptr.c
+test_compound_assignment_ptr.c ^
+test_logical_expr.c
 
 ) else (
   set src=%1
