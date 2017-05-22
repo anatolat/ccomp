@@ -27,7 +27,9 @@ test_scopes.c ^
 test_break_continue.c ^
 test_return.c ^
 test_ptr.c ^
-test_compound_assignment.c
+test_compound_assignment.c ^
+test_ptr_char.c ^
+test_compound_assignment_ptr.c
 
 ) else (
   set src=%1

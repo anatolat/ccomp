@@ -799,14 +799,22 @@ void parse_unary_expr() {
 
 		parse_unary_expr();
 
+		int item_type_info[64];
+		int item_type_info_size;
+
+		get_item_type_info(item_type_info, &item_type_info_size, type_info, type_info_size);
+
 		// TODO optimize
 		emit_push(VAL_INT, 0, 0);
 
 		last_value_ref = nopcodes;
 		emit(OP_DEREF);
-		emit(0);
+		emit(get_type_byte_size(item_type_info, item_type_info_size));
 
-		set_type_placeholder(); // FIXME
+		type_info_size = item_type_info_size;
+		memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
+
+		//dump_type(type_info, type_info_size);
 		return;
 	}
 	
@@ -1700,7 +1708,8 @@ void gen_code(int from, int end) {
 			printf("  pop ecx\n");
 			printf("  pop eax\n");
 			printf("  imul ecx, %d\n", item_size);
-			printf("  mov eax, DWORD PTR [eax + ecx]\n");
+			gen_move("eax", "eax + ecx", 0, item_size);
+
 			printf("  push eax\n");
 		}
 		else if (op == OP_DEREF_ADDR) {

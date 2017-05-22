@@ -1,0 +1,8 @@
+test_local_int
+11 10 5 10 1 
+test_local_char
+11 10 5 10 1 
+test_glob_int
+11 10 5 10 1 
+test_glob_char
+11 10 5 10 1 
