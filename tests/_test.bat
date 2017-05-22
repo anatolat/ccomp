@@ -26,7 +26,8 @@ test_strs2.c ^
 test_scopes.c ^
 test_break_continue.c ^
 test_return.c ^
-test_ptr.c
+test_ptr.c ^
+test_compound_assignment.c
 
 ) else (
   set src=%1
@@ -41,13 +42,18 @@ goto :end
 
   rem echo.
   echo Run '%name%'
+  if exist "%name%.asm" del /f /q "%name%.asm"
+  if exist "%name%.obj" del /f /q "%name%.obj"
+  if exist "%name%.exe" del /f /q "%name%.exe"
+  if exist "%name%.out" del /f /q "%name%.out"
+
   %CC% %input% > %name%.asm 2> %name%.err
   if not %errorlevel% equ 0 (goto :fail)
 
-  ML /c /nologo /Sg /Zi  /W3 /errorReport:prompt  /Ta %name%.asm >NUL
+  ML /c /nologo /Sg /Zi  /W3 /errorReport:prompt  /Ta %name%.asm 
   if not %errorlevel% equ 0 (goto :fail)
 
-  LINK /nologo /SUBSYSTEM:CONSOLE %name%.obj >NUL
+  LINK /nologo /SUBSYSTEM:CONSOLE %name%.obj 
   if not %errorlevel% equ 0 (goto :fail)
 
   rem echo. Run '%name%'

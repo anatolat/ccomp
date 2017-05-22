@@ -17,6 +17,10 @@ enum {
 
 	, T_ASSIGNMENT
 	, T_ASSIGNMENT_ADD
+	, T_ASSIGNMENT_SUB
+	, T_ASSIGNMENT_MUL
+	, T_ASSIGNMENT_DIV
+	, T_ASSIGNMENT_MOD
 	, T_ADD
 	, T_SUB
 	, T_MUL
@@ -128,6 +132,7 @@ enum {
 	, OP_DEC_POST
 	, OP_NOT
 	, OP_NEG
+	, OP_DUP_VALUE
 };
 
 enum {
@@ -151,7 +156,7 @@ enum {
 int nopcodes = 0;
 int opcodes[65536];
 
-int emit(int);
+int emit(int op);
 void emit_push(int val_type, int val, int size);
 
 char funcname[256];
@@ -230,6 +235,10 @@ const char* tok2str(int tok) {
 
 	case T_ASSIGNMENT: return "ASSIGNMENT";
 	case T_ASSIGNMENT_ADD: return "ASSIGNMENT_ADD";
+	case T_ASSIGNMENT_SUB: return "ASSIGNMENT_SUB";
+	case T_ASSIGNMENT_MUL: return "ASSIGNMENT_MUL";
+	case T_ASSIGNMENT_DIV: return "ASSIGNMENT_DIV";
+	case T_ASSIGNMENT_MOD: return "ASSIGNMENT_MOD";
 	case T_EQ: return "EQ";
 	case T_NOT_EQ: return "NOT-EQ";
 	case T_ADD: return "ADD";
@@ -348,13 +357,32 @@ int next_token_helper() {
 	if (ch == '-') {
 		ch = fgetc(f);
 		if (ch == '-') return T_DEC;
+		if (ch == '=') return T_ASSIGNMENT_SUB;
 
 		ungetc(ch, f);
 		return T_SUB;
 	}
-	if (ch == '*') return T_MUL;
-	if (ch == '%') return T_MOD;
-	if (ch == '/') return T_DIV;
+	if (ch == '*') {
+		ch = fgetc(f);
+		if (ch == '=') return T_ASSIGNMENT_MUL;
+
+		ungetc(ch, f);
+		return T_MUL;
+	}
+	if (ch == '%') {
+		ch = fgetc(f);
+		if (ch == '=') return T_ASSIGNMENT_MOD;
+
+		ungetc(ch, f);
+		return T_MOD;
+	}
+	if (ch == '/') {
+		ch = fgetc(f);
+		if (ch == '=') return T_ASSIGNMENT_DIV;
+
+		ungetc(ch, f);
+		return T_DIV;
+	}
 	if (ch == '<') {
 		ch = fgetc(f);
 		if (ch == '=') return T_LESS_EQ;
@@ -820,6 +848,10 @@ int op_prec(int op) {
 
 	case T_ASSIGNMENT:
 	case T_ASSIGNMENT_ADD:
+	case T_ASSIGNMENT_SUB:
+	case T_ASSIGNMENT_MUL:
+	case T_ASSIGNMENT_DIV:
+	case T_ASSIGNMENT_MOD:
 		return 1;
 
 	default:
@@ -835,6 +867,16 @@ void emit_or_jump(int label) {
 void emit_and_jump(int label) {
 	emit(OP_JMPZ);
 	emit(label);
+}
+
+void emit_save(int lvalue_size) {
+	emit(OP_SAVE);
+	emit(lvalue_size);
+}
+
+void emit_compound_save(int op, int lvalue_size) {
+	emit(op);
+	emit_save(lvalue_size);
 }
 
 void parse_expr(int min_prec) {
@@ -862,13 +904,27 @@ void parse_expr(int min_prec) {
 		int lvalue_ref = last_value_ref;
 		int lvalue_size = get_type_byte_size(type_info, type_info_size);
 
-		parse_expr(prec == 1 ? prec : prec + 1);
-
 		if (op == T_ASSIGNMENT) {
 			convert_to_addr(lvalue_ref);
-			emit(OP_SAVE);
+		}
+		else if (op == T_ASSIGNMENT_ADD || op == T_ASSIGNMENT_SUB ||
+			op == T_ASSIGNMENT_MUL || op == T_ASSIGNMENT_DIV || op == T_ASSIGNMENT_MOD) {
+
+			convert_to_addr(lvalue_ref);
+
+			// get value and save to the stack
+			emit(OP_DUP_VALUE);
 			emit(lvalue_size);
 		}
+
+		parse_expr(prec == 1 ? prec : prec + 1);
+
+		if (op == T_ASSIGNMENT) emit_save(lvalue_size);
+		else if (op == T_ASSIGNMENT_ADD) emit_compound_save(OP_ADD, lvalue_size);
+		else if (op == T_ASSIGNMENT_SUB) emit_compound_save(OP_SUB, lvalue_size);
+		else if (op == T_ASSIGNMENT_MUL) emit_compound_save(OP_MUL, lvalue_size);
+		else if (op == T_ASSIGNMENT_DIV) emit_compound_save(OP_DIV, lvalue_size);
+		else if (op == T_ASSIGNMENT_MOD) emit_compound_save(OP_MOD, lvalue_size);
 		else if (op == T_OR || op == T_AND) {
 			// do nothing
 		}
@@ -1577,6 +1633,12 @@ const char* get_asm_reg(int size) {
 	}
 }
 
+void gen_move(const char* dst, const char* src, int offset, int size) {
+	const char* instr = size < 4 ? "movsx" : "mov";
+
+	printf("  %s %s, %s PTR [%s]%+d\n", instr, dst, get_asm_type(size), src, offset);
+}
+
 void gen_code(int from, int end) {
 	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
@@ -1605,28 +1667,11 @@ void gen_code(int from, int end) {
 				printf("  push %d\n", value);
 			}
 			else if (value_type == VAL_LOCAL) {
-				if (value >= 0) {
-					printf("  mov eax, DWORD PTR [ebp]+%d\n", value);
+				if (size == 0) {
+					size = 4;
 				}
-				else {
-					const char *instr = "XXX";
-					switch (size) {
-					case 1:
-						instr = "movsx eax, BYTE PTR";
-						break;
 
-					case 2:
-						instr = "movsx eax, WORD PTR";
-						break;
-
-					case 4:
-						instr = "mov eax, DWORD PTR";
-						break;
-					}
-
-					printf("  %s [ebp]%d\n", instr, value);
-					
-				}
+				gen_move("eax", "ebp", value, size);
 				printf("  push eax\n", value);
 			}
 			else if (value_type == VAL_LOCAL_ADDR) {
@@ -1666,12 +1711,21 @@ void gen_code(int from, int end) {
 			printf("  lea eax, DWORD PTR [eax + ecx]\n");
 			printf("  push eax\n");
 		}
+		else if (op == OP_DUP_VALUE) {
+			int size = opcodes[i++];
+			printf("  mov eax, DWORD PTR [esp]\n"); // peek addr from the top of the stack
+			gen_move("eax", "eax", 0, size); // dereference addr
+			printf("  push eax\n");
+		}
 		else if (op == OP_SAVE) {
 			int size = opcodes[i++];
 
 			printf("  pop eax\n");
 			printf("  pop ecx\n");
-			printf("  mov %s PTR [ecx], %s\n", get_asm_type(size), get_asm_reg(size));
+
+			const char* reg = get_asm_reg(size);
+			printf("  mov %s PTR [ecx], %s\n", get_asm_type(size), reg);
+			printf("  push eax\n");
 		}
 		else if (op == OP_CALL) {
 			int header_ref = opcodes[i];
