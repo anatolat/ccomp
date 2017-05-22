@@ -1,6 +1,5 @@
 // TODO
 // - array init
-// - ternary operator
 
 
 #include <stdio.h>

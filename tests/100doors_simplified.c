@@ -15,14 +15,7 @@ int main()
  
   /* output the result */
   for (door = 0; door < 100; ++door) {
-    char *s;
-    if (is_open) {
-      s = "open";
-    } else {
-      s = "closed";
-    }
- 
-    printf("door #%d is %s.\n", door+1, s);
+    printf("door #%d is %s.\n", door+1, (is_open[door]? "open" : "closed"));
   }
  
   return 0;

@@ -14,6 +14,7 @@ enum {
 	, T_COMMA
 	, T_PERIOD
 	, T_COLON
+	, T_QUESTION
 
 	, T_ASSIGNMENT
 	, T_ASSIGNMENT_ADD
@@ -90,7 +91,7 @@ int types_sizes[256] = {
 int cpool_size = 0;
 char cpool[1024];
 
-int add_const(const char*);
+int add_const(const char* s);
 
 // end cpool
 
@@ -141,17 +142,19 @@ enum {
 	VAL_LOCAL,
 	VAL_LOCAL_ADDR,
 	VAL_GLOB,
-	VAL_GLOB_ADDR,
-	VAL_EXTERN
+	VAL_GLOB_ADDR
 };
-
 
 enum {
 	DECL_ARRAY = 1,
 	DECL_PTR,
+	DECL_FUN,
 	DECL_BASIC
 };
 
+enum {
+	ATTR_EXTERN = 1
+};
 
 int nopcodes = 0;
 int opcodes[65536];
@@ -179,9 +182,6 @@ int local_vars[256][64];
 
 int nlabels;
 
-int nexterns;
-char externs[256][64];
-
 int nglobals;
 char globals[256][64];
 int global_vars[256][64];
@@ -189,7 +189,7 @@ int global_vars[256][64];
 int last_value_ref = -1;
 
 int type_info_size;
-int type_info[63];
+int type_info[62];
 	
 void dump_type(int* type_info, int size);
 int get_basic_type(int* type_info, int size);
@@ -198,7 +198,6 @@ int get_type_byte_size(int* type_info, int size);
 void get_item_type_info(int* dest_type_info, int* dest_size, int* type_info, int type_info_size);
 void set_type_placeholder();
 
-int add_extern(const char* s);
 int add_param(const char* s);
 int add_local(const char* s);
 int add_global(const char* s);
@@ -232,6 +231,7 @@ const char* tok2str(int tok) {
 	case T_COMMA: return "COMMA";
 	case T_PERIOD: return "PERIOD";
 	case T_COLON: return "COLON";
+	case T_QUESTION: return "QUESTION";
 
 	case T_ASSIGNMENT: return "ASSIGNMENT";
 	case T_ASSIGNMENT_ADD: return "ASSIGNMENT_ADD";
@@ -338,6 +338,7 @@ int next_token_helper() {
 	if (ch == ',') return T_COMMA;
 	if (ch == '.') return T_PERIOD;
 	if (ch == ':') return T_COLON;
+	if (ch == '?') return T_QUESTION;
 
 	if (ch == '=') {
 		ch = fgetc(f);
@@ -630,16 +631,14 @@ void parse_primary_expr() {
 
 			set_type_placeholder();
 		}
-		else if ((id = get_extern(token_id)) != -1) {
-			emit_push(VAL_EXTERN, id, 0);
-
-			set_type_placeholder();
-		}
 		else if ((id = get_global(token_id)) != -1) {
-			type_info_size = global_vars[id][0];
-			memcpy(type_info, &global_vars[id][1], type_info_size * sizeof(type_info[0]));
+			type_info_size = global_vars[id][1];
+			memcpy(type_info, &global_vars[id][2], type_info_size * sizeof(type_info[0]));
 
-			int is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
+			int is_addr = 
+				type_info[type_info_size - 1] == DECL_ARRAY ||
+				type_info[type_info_size - 1] == DECL_FUN;
+
 			emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
 		}
 		else {
@@ -824,35 +823,41 @@ void parse_unary_expr() {
 int op_prec(int op) {
 	switch (op) {
 	case T_MUL: case T_DIV: case T_MOD:
-		return 11;
+		return 12;
 
 	case T_ADD: case T_SUB: 
-		return 10;
+		return 11;
 
 	case T_SHL: case T_SHR:
-		return 9;
+		return 10;
 
 	case T_LESS: case T_GREATER:
 	case T_LESS_EQ: case T_GREATER_EQ:
-		return 8;	
+		return 9;	
 
 	case T_EQ: case T_NOT_EQ:
-		return 7;
+		return 8;
 
 	case T_BIT_AND:
-		return 6;
+		return 7;
 
 	case T_BIT_XOR:
-		return 5;
+		return 6;
 
 	case T_BIT_OR:
-		return 4;
+		return 5;
 
 	case T_AND:
-		return 3;
+		return 4;
 
 	case T_OR:
+		return 3;
+
+	case T_QUESTION:
 		return 2;
+
+	case T_COLON:
+		return -1;
 
 	case T_ASSIGNMENT:
 	case T_ASSIGNMENT_ADD:
@@ -867,12 +872,12 @@ int op_prec(int op) {
 	}
 }
 
-void emit_or_jump(int label) {
+void emit_jmpnz(int label) {
 	emit(OP_JMPNZ);
 	emit(label);
 }
 
-void emit_and_jump(int label) {
+void emit_jmpz(int label) {
 	emit(OP_JMPZ);
 	emit(label);
 }
@@ -902,15 +907,18 @@ void parse_expr(int min_prec) {
 
 		if (op == T_OR) {
 			if (or_label == -1) or_label = nlabels++;
-			emit_or_jump(or_label);
+			emit_jmpnz(or_label);
 		}
 		else if (op == T_AND) {
 			if (and_label == -1) and_label = nlabels++;
-			emit_and_jump(and_label);
+			emit_jmpz(and_label);
 		}
 
 		int lvalue_ref = last_value_ref;
 		int lvalue_size = get_type_byte_size(type_info, type_info_size);
+
+		int q_zero_label = -1;
+		int q_end_label = -1;
 
 		if (op == T_ASSIGNMENT) {
 			convert_to_addr(lvalue_ref);
@@ -924,18 +932,38 @@ void parse_expr(int min_prec) {
 			emit(OP_DUP_VALUE);
 			emit(lvalue_size);
 		}
+		
+		if (op == T_QUESTION) {
+			q_zero_label = nlabels++;
+			q_end_label = nlabels++;
+			emit_jmpz(q_zero_label);
 
-		parse_expr(prec == 1 ? prec : prec + 1);
+			parse_expr(1);
 
-		if (op == T_ASSIGNMENT) emit_save(lvalue_size);
+			emit(OP_JMP);
+			emit(q_end_label);
+
+			emit(OP_LABEL);
+			emit(q_zero_label);
+
+			check_token(T_COLON);
+			next_token();
+		}
+		parse_expr(prec <= 2 ? prec : prec + 1);
+
+		if (op == T_OR || op == T_AND) {
+			// do nothing
+		}
+		else if (op == T_QUESTION) {
+			emit(OP_LABEL);
+			emit(q_end_label);
+		}
+		else if (op == T_ASSIGNMENT) emit_save(lvalue_size);
 		else if (op == T_ASSIGNMENT_ADD) emit_compound_save(OP_ADD, lvalue_size);
 		else if (op == T_ASSIGNMENT_SUB) emit_compound_save(OP_SUB, lvalue_size);
 		else if (op == T_ASSIGNMENT_MUL) emit_compound_save(OP_MUL, lvalue_size);
 		else if (op == T_ASSIGNMENT_DIV) emit_compound_save(OP_DIV, lvalue_size);
 		else if (op == T_ASSIGNMENT_MOD) emit_compound_save(OP_MOD, lvalue_size);
-		else if (op == T_OR || op == T_AND) {
-			// do nothing
-		}
 		else if (op == T_ADD) emit(OP_ADD);
 		else if (op == T_SUB) emit(OP_SUB);
 		else if (op == T_MUL) emit(OP_MUL);
@@ -953,7 +981,7 @@ void parse_expr(int min_prec) {
 	}
 
 	if (or_label != -1) {
-		emit_or_jump(or_label);
+		emit_jmpnz(or_label);
 		emit_push(VAL_INT, 0, 0);
 
 		int end = nlabels++;
@@ -970,7 +998,7 @@ void parse_expr(int min_prec) {
 	}
 
 	if (and_label != -1) {
-		emit_and_jump(and_label);
+		emit_jmpz(and_label);
 		emit_push(VAL_INT, 1, 0);
 
 		int end = nlabels++;
@@ -1059,6 +1087,8 @@ void parse_direct_declarator(char* id, int* func) {
 		}
 		else if (token == T_LPAREN) {
 			*func = 1;
+			type_info[type_info_size++] = DECL_FUN;
+
 			start_func_decl(id);
 
 			parse_func_params();
@@ -1097,6 +1127,9 @@ void parse_declarator(int ctx) {
 			check_token(T_SEMI);
 			next_token();
 
+			int id = get_global(funcname);
+			global_vars[id][0] = ATTR_EXTERN;
+
 			funcname[0] = 0;
 		}
 
@@ -1117,8 +1150,8 @@ void parse_declarator(int ctx) {
 			else {
 				int index = add_global(id);
 
-				global_vars[index][0] = type_info_size;
-				memcpy(&global_vars[index][1], type_info, type_info_size * sizeof(type_info[0]));
+				global_vars[index][1] = type_info_size;
+				memcpy(&global_vars[index][2], type_info, type_info_size * sizeof(type_info[0]));
 			}
 		}
 
@@ -1448,7 +1481,9 @@ void emit_push(int val_type, int val, int size) {
 void start_func_decl(const char* s) {
 	strcpy(funcname, s);
 
-	add_extern(s);
+	int id = add_global(s);
+	global_vars[id][1] = type_info_size;
+	memcpy(&global_vars[id][2], type_info, type_info_size * sizeof(type_info[0]));
 
 	nparams = 0;
 }
@@ -1490,18 +1525,6 @@ int add_local(const char* s) {
 int get_local(const char* s) {
 	for (int i = nlocals - 1; i >= 0; --i) {
 		if (!strcmp(locals[i], s)) return i;
-	}
-	return -1;
-}
-
-int add_extern(const char* s) {
-	strcpy(externs[nexterns++], s);
-	return nexterns - 1;
-}
-
-int get_extern(const char* s) {
-	for (int i = 0; i < nexterns; ++i) {
-		if (!strcmp(externs[i], s)) return i;
 	}
 	return -1;
 }
@@ -1569,13 +1592,24 @@ const char* get_basic_type_asm_name(int size) {
 void gen_globals() {
 	// public section
 	for (int i = 0; i < nglobals; ++i) {
-		printf("public %s\n", globals[i]);
+		if (global_vars[i][0] == ATTR_EXTERN) {
+			printf("_%s PROTO\n", globals[i]);
+		}
+		else {
+			printf("public _%s\n", globals[i]);
+		}
 	}
 
 	printf(".data\n");
 	for (int i = 0; i < nglobals; ++i) {
-		int* type_info = &global_vars[i][1];
-		int type_info_size = global_vars[i][0];
+		if (global_vars[i][0] == ATTR_EXTERN) continue;
+
+		int type_size = global_vars[i][1];
+		if (global_vars[i][2 + type_size - 1] == DECL_FUN) continue;
+
+		int type_info_size = global_vars[i][1];
+		int* type_info = &global_vars[i][2];
+		
 		int basic_type = get_basic_type(type_info, type_info_size);
 		const char* basic_type_name = get_basic_type_asm_name(types_sizes[basic_type]);
 
@@ -1583,10 +1617,10 @@ void gen_globals() {
 
 		
 		if (type_info[type_info_size - 1] == DECL_ARRAY) {
-			printf("%s %s %d dup (0)\n", globals[i], basic_type_name, array_size);
+			printf("_%s %s %d dup (0)\n", globals[i], basic_type_name, array_size);
 		}
 		else {
-			printf("%s %s 0\n", globals[i], basic_type_name);
+			printf("_%s %s 0\n", globals[i], basic_type_name);
 		}
 	}
 	printf("\n");
@@ -1651,7 +1685,7 @@ void gen_code(int from, int end) {
 	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
 		if (op == OP_FUNC_PROLOGUE) {
-			printf("%s proc\n", funcname);
+			printf("_%s proc\n", funcname);
 			printf("  push ebp\n");
 			printf("  mov ebp, esp\n");
 			printf("  sub esp, %d\n\n", stack_size);
@@ -1661,7 +1695,7 @@ void gen_code(int from, int end) {
 			printf("  mov esp, ebp\n");
 			printf("  pop ebp\n");
 			printf("  ret 0\n");
-			printf("%s endp\n\n", funcname);
+			printf("_%s endp\n\n", funcname);
 		}
 		else if (op == OP_PUSH) {
 			int value_type = opcodes[i++];
@@ -1692,15 +1726,11 @@ void gen_code(int from, int end) {
 
 				printf("  push eax\n", value);
 			}
-			else if (value_type == VAL_EXTERN) {
-				printf("  push OFFSET %s\n", externs[value]);
-			}
 			else if (value_type == VAL_GLOB) {
-				printf("  mov eax, DWORD PTR %s\n", globals[value]);
-				printf("  push eax\n", value);
+				printf("  push DWORD PTR _%s\n", globals[value]);
 			}
 			else if (value_type == VAL_GLOB_ADDR) {
-				printf("  push OFFSET %s\n", globals[value]);
+				printf("  push OFFSET _%s\n", globals[value]);
 			}
 		}
 		else if (op == OP_DEREF) {
@@ -1853,9 +1883,7 @@ void gen_code(int from, int end) {
 			printf("  push eax\n");
 		}
 		else if (op == OP_NEG){
-			printf("  pop eax\n");
-			printf("  neg eax\n");
-			printf("  push eax\n");
+			printf("  neg DWORD PTR [esp]\n");
 		}
 	}
 }
@@ -1863,19 +1891,8 @@ void gen_code(int from, int end) {
 void gen_asm() {
 	// header
 	printf(".586\n");
-	printf(".model flat, c\n\n");
+	printf(".model flat\n\n");
 	printf("includelib msvcrtd\n");
-	// FIXME: generate
-	printf("printf PROTO C :VARARG\n");
-	printf("strcpy PROTO C\n");
-	printf("strcmp PROTO C\n");
-	printf("strlen PROTO C\n");
-	printf("fgetc PROTO C\n");
-	printf("ungetc PROTO C\n");
-	printf("fopen PROTO C\n");
-	printf("fclose PROTO C\n");
-	printf("memcpy PROTO C\n");
-
 
 	printf(".code\n\n");
 
@@ -2014,20 +2031,31 @@ int find_continue_label() {
 	return -1;
 }
 
+void add_extern_func(const char* s) {
+	int id = add_global(s);
+	global_vars[id][0] = ATTR_EXTERN;
+
+	int size = 0;
+	global_vars[id][2 + size++] = TYPE_INT;
+	global_vars[id][2 + size++] = DECL_BASIC;
+	global_vars[id][2 + size++] = DECL_FUN;
+	global_vars[id][1] = size;
+}
+
 int main(int argc, char** argv) {
 
 	if (argc != 2) return -1;
 
-	add_extern("fopen");
-	add_extern("fclose");
-	add_extern("fgetc");
-	add_extern("ungetc");
-	add_extern("printf");
-	add_extern("exit");
-	add_extern("strcpy");
-	add_extern("strcmp");
-	add_extern("strlen");
-	add_extern("memcpy");
+	add_extern_func("fopen");
+	add_extern_func("fclose");
+	add_extern_func("fgetc");
+	add_extern_func("ungetc");
+	add_extern_func("printf");
+	add_extern_func("exit");
+	add_extern_func("strcpy");
+	add_extern_func("strcmp");
+	add_extern_func("strlen");
+	add_extern_func("memcpy");
 
 	f = fopen(argv[1], "r");
 	gen_asm();
