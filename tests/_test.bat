@@ -32,7 +32,8 @@ test_ptr_char.c ^
 test_compound_assignment_ptr.c ^
 test_logical_expr.c ^
 test_ternary.c ^
-test_switch.c
+test_switch.c ^
+test_enum.c
 
 ) else (
   set src=%1

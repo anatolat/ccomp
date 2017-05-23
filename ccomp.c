@@ -64,6 +64,7 @@ enum {
 	, T_SWITCH
 	, T_CASE
 	, T_DEFAULT
+	, T_ENUM
 };
 
 FILE* f;
@@ -94,7 +95,14 @@ int types_sizes[256] = {
 int cpool_size = 0;
 char cpool[1024];
 
-int add_const(const char* s);
+int nint_consts = 0;
+char int_consts[256][64];
+int int_consts_vals[256];
+
+int add_str(const char* s);
+
+int add_int_const(const char* name, int value);
+int get_int_const(const char* name);
 
 // end cpool
 
@@ -209,7 +217,7 @@ int get_basic_type(int* type_info, int size);
 int get_type_array_size(int* type_info, int size);
 int get_type_byte_size(int* type_info, int size);
 void get_item_type_info(int* dest_type_info, int* dest_size, int* type_info, int type_info_size);
-void set_type_placeholder();
+void set_int_type();
 
 int add_param(const char* s);
 int add_local(const char* s);
@@ -292,6 +300,7 @@ const char* tok2str(int tok) {
 	case T_SWITCH: return "SWITCH";
 	case T_CASE: return "CASE";
 	case T_DEFAULT: return "DEFAULT";
+	case T_ENUM: return "ENUM";
 	}
 	return "XXX";
 }
@@ -490,6 +499,9 @@ int next_token_helper() {
 		else if (!strcmp(token_id, "default")) {
 			t = T_DEFAULT;
 		}
+		else if (!strcmp(token_id, "enum")) {
+			t = T_ENUM;
+		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
 				if (!strcmp(types[i], token_id)) {
@@ -608,7 +620,7 @@ void parse_primary_expr() {
 		return;
 	}
 	if (token == T_STR_LIT) {
-		int cid = add_const(token_id);
+		int cid = add_str(token_id);
 		emit_push(VAL_STR, cid, 0);
 
 		type_info_size = 0;
@@ -654,7 +666,7 @@ void parse_primary_expr() {
 		else if ((id = get_param(token_id)) != -1) {
 			emit_push(VAL_LOCAL, 4 * (id + 2), 0);
 
-			set_type_placeholder();
+			set_int_type();
 		}
 		else if ((id = get_global(token_id)) != -1) {
 			type_info_size = global_vars[id][1];
@@ -665,6 +677,12 @@ void parse_primary_expr() {
 				type_info[type_info_size - 1] == DECL_FUN;
 
 			emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
+		}
+		else if ((id = get_int_const(token_id)) != -1) {
+			int val = int_consts_vals[id];
+			set_int_type();
+
+			emit_push(VAL_INT, val, 4);
 		}
 		else {
 			fprintf(stderr, "Error (%d): unknown identifier %s\n", lineno, token_id);
@@ -720,7 +738,7 @@ void parse_postfix_expr() {
 				emit(sizes[i]);
 			}
 
-			set_type_placeholder();
+			set_int_type();
 		}
 		else if (token == T_LBRACKET) {
 			next_token();
@@ -756,7 +774,7 @@ void parse_postfix_expr() {
 			last_value_ref = nopcodes;
 			emit(inc ? OP_INC_POST : OP_DEC_POST);
 
-			set_type_placeholder();
+			set_int_type();
 			break;
 		}
 		else break;
@@ -775,7 +793,7 @@ void parse_unary_expr() {
 
 		emit(inc ? OP_INC : OP_DEC);
 
-		set_type_placeholder();
+		set_int_type();
 		return;
 	}
 	if (token == T_NOT) {
@@ -786,7 +804,7 @@ void parse_unary_expr() {
 		last_value_ref = nopcodes;
 		emit(OP_NOT);
 
-		set_type_placeholder();
+		set_int_type();
 		return;
 	}
 	if (token == T_ADD) {
@@ -794,7 +812,7 @@ void parse_unary_expr() {
 		
 		parse_unary_expr();
 
-		set_type_placeholder();
+		set_int_type();
 		return;
 	}
 	if (token == T_SUB) {
@@ -805,7 +823,7 @@ void parse_unary_expr() {
 		last_value_ref = nopcodes;
 		emit(OP_NEG);
 
-		set_type_placeholder();
+		set_int_type();
 		return;
 	}
 	if (token == T_BIT_AND) {
@@ -815,7 +833,7 @@ void parse_unary_expr() {
 
 		convert_to_addr(last_value_ref);
 
-		set_type_placeholder(); // FIXME
+		set_int_type(); // FIXME
 		return;
 	}
 	if (token == T_MUL) {
@@ -1201,11 +1219,54 @@ void parse_declaration(int ctx) {
 	//dump_type(type_info, type_info_size);
 }
 
+void parse_enum() {
+	next_token();
+
+	check_token(T_LCURLY);
+	next_token();
+
+	int value = 0;
+
+	char id[256];
+
+	while (token != T_RCURLY && token != T_EOF) {
+		strcpy(id, token_id);
+
+		check_token(T_ID);
+		next_token();
+
+		if (token == T_ASSIGNMENT) {
+			next_token();
+
+			value = token_num;
+			check_token(T_INT_LIT);
+			next_token();
+		}
+
+		add_int_const(id, value++);
+
+		if (token != T_COMMA) {
+			break;
+		}
+
+		next_token();
+	}
+
+	check_token(T_RCURLY);
+	next_token();
+
+	check_token(T_SEMI);
+	next_token();
+}
+
 void parse_stmt() {
-	// func_decl: TYPEID ID () {}
-	// var_decl: TYPEID ID;
 	if (token == T_TYPEID) {
 		parse_declaration(DECL_CTX_DEFAULT);
+		return;
+	}
+
+	if (token == T_ENUM) {
+		parse_enum();
 		return;
 	}
 
@@ -1271,7 +1332,7 @@ void parse_stmt() {
 		check_token(T_LPAREN);
 		next_token();
 
-		set_type_placeholder();
+		set_int_type();
 		int var = add_local("$tmp");
 		int var_offs = local_vars[var][0];
 
@@ -1570,13 +1631,29 @@ void parse_stmts(int terminator) {
 
 
 // cpool
-int add_const(const char* s) {
+int add_str(const char* s) {
 	int size = strlen(s) + 1;
 
 	memcpy(cpool + cpool_size, s, size);
 	cpool_size += size;
 	return cpool_size - size;
 }
+
+int add_int_const(const char* name, int val) {
+	int id = nint_consts++;
+	strcpy(int_consts[id], name);
+	int_consts_vals[id] = val;
+
+	return id;
+}
+
+int get_int_const(const char* s) {
+	for (int i = nint_consts - 1; i >= 0; --i) {
+		if (!strcmp(int_consts[i], s)) return i;
+	}
+	return -1;
+}
+
 
 // end cpool
 
@@ -2124,7 +2201,7 @@ void get_item_type_info(int* dest_type_info, int* dest_size, int* type_info, int
 	memcpy(dest_type_info, type_info, *dest_size * sizeof(type_info[0]));
 }
 
-void set_type_placeholder() {
+void set_int_type() {
 	type_info_size = 0;
 	type_info[type_info_size++] = TYPE_INT;
 	type_info[type_info_size++] = DECL_BASIC;
