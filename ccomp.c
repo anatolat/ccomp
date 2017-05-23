@@ -61,6 +61,9 @@ enum {
 	, T_FOR
 	, T_BREAK
 	, T_CONTINUE
+	, T_SWITCH
+	, T_CASE
+	, T_DEFAULT
 };
 
 FILE* f;
@@ -126,7 +129,6 @@ enum {
 	, OP_GREATER_EQ
 	, OP_EQ
 	, OP_NOT_EQ
-	, OP_FOR
 	, OP_INC
 	, OP_DEC
 	, OP_INC_POST
@@ -134,6 +136,8 @@ enum {
 	, OP_NOT
 	, OP_NEG
 	, OP_DUP_VALUE
+	, OP_FOR
+	, OP_CASE
 };
 
 enum {
@@ -153,6 +157,12 @@ enum {
 };
 
 enum {
+	SCOPE_BLOCK,
+	SCOPE_LOOP,
+	SCOPE_SWITCH
+};
+
+enum {
 	ATTR_EXTERN = 1
 };
 
@@ -168,8 +178,11 @@ int stack_size;
 int nscopes;
 int scopes[64][8];
 
-void start_scope(int breakLabel, int continueLabel);
+int start_block_scope();
+int start_switch_scope(int end_label, int case_label, int var);
+int start_loop_scope(int break_label, int continue_label);
 void end_scope();
+int find_scope(int type);
 int find_break_label();
 int find_continue_label();
 
@@ -276,6 +289,9 @@ const char* tok2str(int tok) {
 	case T_FOR: return "FOR";
 	case T_BREAK: return "BREAK";
 	case T_CONTINUE: return "CONTINUE";
+	case T_SWITCH: return "SWITCH";
+	case T_CASE: return "CASE";
+	case T_DEFAULT: return "DEFAULT";
 	}
 	return "XXX";
 }
@@ -464,6 +480,15 @@ int next_token_helper() {
 		}
 		else if (!strcmp(token_id, "continue")) {
 			t = T_CONTINUE;
+		}
+		else if (!strcmp(token_id, "switch")) {
+			t = T_SWITCH;
+		}
+		else if (!strcmp(token_id, "case")) {
+			t = T_CASE;
+		}
+		else if (!strcmp(token_id, "default")) {
+			t = T_DEFAULT;
 		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
@@ -1140,18 +1165,10 @@ void parse_declarator(int ctx) {
 		}
 		else {
 			if (funcname[0]) {
-				int index = add_local(id);
-				stack_size += get_type_byte_size(type_info, type_info_size);
-
-				local_vars[index][0] = -stack_size;
-				local_vars[index][1] = type_info_size;
-				memcpy(&local_vars[index][2], type_info, type_info_size * sizeof(type_info[0]));
+				add_local(id);
 			}
 			else {
-				int index = add_global(id);
-
-				global_vars[index][1] = type_info_size;
-				memcpy(&global_vars[index][2], type_info, type_info_size * sizeof(type_info[0]));
+				add_global(id);
 			}
 		}
 
@@ -1212,17 +1229,17 @@ void parse_stmt() {
 
 	if (token == T_IF) {
 		parse_token(T_LPAREN);
-
 		next_token();
+
 		parse_assignment_expr();
 
 		check_token(T_RPAREN);
+		next_token();
 
 		int noteq_label = nlabels++;
 		emit(OP_JMPZ);
 		emit(noteq_label);
 
-		next_token();
 		parse_stmt();
 
 		int end_label;
@@ -1248,11 +1265,110 @@ void parse_stmt() {
 		return;
 	}
 
+	if (token == T_SWITCH) {
+		next_token();
+
+		check_token(T_LPAREN);
+		next_token();
+
+		set_type_placeholder();
+		int var = add_local("$tmp");
+		int var_offs = local_vars[var][0];
+
+		emit_push(VAL_LOCAL_ADDR, var_offs, 4);
+
+		parse_assignment_expr();
+		emit(OP_SAVE);
+		emit(4);
+		
+		check_token(T_RPAREN);
+		next_token();
+
+		int end_label = nlabels++;
+
+		int scope = start_switch_scope(end_label, -1, var);
+
+		parse_stmt();
+
+		int last_case_label = scopes[scope][3];
+
+		if (last_case_label != -1) {
+			emit(OP_LABEL);
+			emit(last_case_label);
+		}
+
+		emit(OP_LABEL);
+		emit(end_label);
+		end_scope();
+		return;
+	}
+
+	if (token == T_CASE) {
+		next_token();
+
+		int scope = find_scope(SCOPE_SWITCH);
+		int case_label = scopes[scope][3];
+		int jmp_over_label = -1;
+
+		if (case_label != -1) {
+			// Jump over comparison for handling case falltrough
+			jmp_over_label = nlabels++;
+			emit(OP_JMP);
+			emit(jmp_over_label);
+
+			emit(OP_LABEL);
+			emit(case_label);
+		}
+
+		parse_primary_expr();
+
+		check_token(T_COLON);
+		next_token();
+		
+		int var = scopes[scope][4];
+		int var_offs = local_vars[var][0];
+
+		scopes[scope][3] = nlabels++;
+
+		emit(OP_CASE);
+		emit(var_offs); // var
+		emit(scopes[scope][3]); // case_label
+
+		if (jmp_over_label != -1) {
+			emit(OP_LABEL);
+			emit(jmp_over_label);
+		}
+
+		parse_stmt();
+		return;
+	}
+
+	if (token == T_DEFAULT) {
+		next_token();
+
+		check_token(T_COLON);
+		next_token();
+
+		int scope = find_scope(SCOPE_SWITCH);
+		int case_label = scopes[scope][3];
+
+		if (case_label != -1) {
+			// Jump over comparison for handling case falltrough
+			emit(OP_LABEL);
+			emit(case_label);
+
+			scopes[scope][3] = -1;
+		}
+
+		parse_stmt();
+		return;
+	}
+
 	if (token == T_WHILE) {
 		int start_label = nlabels++;
 		int end_label = nlabels++;
 
-		start_scope(end_label, start_label);
+		start_loop_scope(end_label, start_label);
 
 		emit(OP_LABEL);
 		emit(start_label);
@@ -1287,7 +1403,7 @@ void parse_stmt() {
 		int end_label = nlabels++;
 		int continue_label = nlabels++;
 
-		start_scope(end_label, continue_label);
+		start_loop_scope(end_label, continue_label);
 
 		emit(OP_LABEL);
 		emit(start_label);
@@ -1330,7 +1446,7 @@ void parse_stmt() {
 		int end_label = nlabels++;
 		int continue_label = nlabels++;
 
-		start_scope(end_label, continue_label);
+		start_loop_scope(end_label, continue_label);
 
 		parse_token(T_LPAREN);
 		next_token();
@@ -1417,7 +1533,7 @@ void parse_stmt() {
 
 	//
 	if (token == T_LCURLY) {
-		start_scope(-1, -1);
+		start_block_scope();
 
 		next_token();
 
@@ -1493,7 +1609,7 @@ void start_func_body() {
 	nlabels = 0;
 	stack_size = 0;
 
-	start_scope(-1, -1);
+	start_block_scope();
 
 	emit(OP_FUNC_PROLOGUE);
 }
@@ -1518,8 +1634,15 @@ int get_param(const char* s) {
 }
 
 int add_local(const char* s) {
-	strcpy(locals[nlocals++], s);
-	return nlocals - 1;
+	int index = nlocals++;
+	strcpy(locals[index], s);
+	stack_size += get_type_byte_size(type_info, type_info_size);
+
+	local_vars[index][0] = -stack_size;
+	local_vars[index][1] = type_info_size;
+	memcpy(&local_vars[index][2], type_info, type_info_size * sizeof(type_info[0]));
+
+	return index;
 }
 
 int get_local(const char* s) {
@@ -1530,8 +1653,13 @@ int get_local(const char* s) {
 }
 
 int add_global(const char* s) {
-	strcpy(globals[nglobals++], s);
-	return nglobals - 1;
+	int index = nglobals++;
+	strcpy(globals[index], s);
+
+	global_vars[index][1] = type_info_size;
+	memcpy(&global_vars[index][2], type_info, type_info_size * sizeof(type_info[0]));
+
+	return index;
 }
 
 int get_global(const char* s) {
@@ -1818,6 +1946,13 @@ void gen_code(int from, int end) {
 			int label = opcodes[i++];
 			printf("  jne __%s_%d\n", funcname, label);
 		}
+		else if (op == OP_CASE) {
+			int var = opcodes[i++];
+			int label = opcodes[i++];
+			printf("  pop eax\n");
+			printf("  cmp DWORD PTR [ebp]%+d, eax\n", var);
+			printf("  jne __%s_%d\n", funcname, label);
+		}
 		else if (op == OP_LABEL) {
 			int id = opcodes[i++];
 			printf("\n__%s_%d:\n", funcname, id);
@@ -1995,51 +2130,76 @@ void set_type_placeholder() {
 	type_info[type_info_size++] = DECL_BASIC;
 }
 
-void start_scope(int breakLabel, int continueLabel) {
+int start_scope(int type) {
 	if (nscopes > 0)  {
-		scopes[nscopes - 1][0] = nlocals;
+		scopes[nscopes - 1][1] = nlocals;
 	}
-	scopes[nscopes][0] = 0;
-	scopes[nscopes][1] = breakLabel;
-	scopes[nscopes][2] = continueLabel;
-	++nscopes;
+	scopes[nscopes][0] = type;
+	scopes[nscopes][1] = 0;
+	return nscopes++;
+}
+
+int start_loop_scope(int break_label, int continue_label) {
+	int i = start_scope(SCOPE_LOOP);
+	scopes[i][2] = break_label;
+	scopes[i][3] = continue_label;
+	return i;
+}
+
+int start_block_scope() {
+	return start_scope(SCOPE_BLOCK);
+}
+
+int start_switch_scope(int break_label, int case_label, int var) {
+	int i = start_scope(SCOPE_SWITCH);
+	scopes[i][2] = break_label;
+	scopes[i][3] = case_label;
+	scopes[i][4] = var;
+	return i;
 }
 
 void end_scope() {
 	--nscopes;
 	
 	if (nscopes > 0) {
-		nlocals = scopes[nscopes - 1][0];
+		nlocals = scopes[nscopes - 1][1];
 	}
 	else {
 		nlocals = 0;
 	}
 }
 
+int find_scope(int type) {
+	for (int i = nscopes - 1; i >= 0; --i) {
+		if (scopes[i][0] == type) return i;
+	}
+	return -1;
+}
+
 int find_break_label() {
 	for (int i = nscopes - 1; i >= 0; --i) {
-		if (scopes[i][1] != -1) return scopes[i][1];
+		if (scopes[i][0] == SCOPE_LOOP || scopes[i][0] == SCOPE_SWITCH) return scopes[i][2];
 	}
 
 	return -1;
 }
 int find_continue_label() {
 	for (int i = nscopes - 1; i >= 0; --i) {
-		if (scopes[i][2] != -1) return scopes[i][2];
+		if (scopes[i][0] == SCOPE_LOOP) return scopes[i][3];
 	}
 
 	return -1;
 }
 
 void add_extern_func(const char* s) {
+	type_info_size = 0;
+	type_info[type_info_size++] = TYPE_INT;
+	type_info[type_info_size++] = DECL_BASIC;
+	type_info[type_info_size++] = DECL_FUN;
+
 	int id = add_global(s);
 	global_vars[id][0] = ATTR_EXTERN;
 
-	int size = 0;
-	global_vars[id][2 + size++] = TYPE_INT;
-	global_vars[id][2 + size++] = DECL_BASIC;
-	global_vars[id][2 + size++] = DECL_FUN;
-	global_vars[id][1] = size;
 }
 
 int main(int argc, char** argv) {
