@@ -1,4 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <string.h>
 
@@ -65,9 +66,11 @@ enum {
 	, T_CASE
 	, T_DEFAULT
 	, T_ENUM
+	, T_CONST
 };
 
-FILE* f;
+FILE* fsource;
+FILE* ftarget;
 int token;
 char token_id[256];
 int token_num;
@@ -296,6 +299,7 @@ const char* tok2str(int tok) {
 	case T_CASE: return "CASE";
 	case T_DEFAULT: return "DEFAULT";
 	case T_ENUM: return "ENUM";
+	case T_CONST: return "CONST";
 	}
 	return "XXX";
 }
@@ -305,46 +309,46 @@ int next_token_helper() {
 	int ch;
 
 	do {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '\n') ++lineno;
 
 
 		// ignore preprocessor directives
 		if (ch == '#') {
 			while (ch != '\n' && ch != EOF) {
-				ch = fgetc(f);
+				ch = fgetc(fsource);
 			}
 
 			if (ch == '\n') ++lineno;
 		}
 		// comments
 		else if (ch == '/') {
-			ch = fgetc(f);
+			ch = fgetc(fsource);
 			if (ch == '/') {
 				while (ch != '\n' && ch != EOF) {
-					ch = fgetc(f);
+					ch = fgetc(fsource);
 				}
 
 				if (ch == '\n') ++lineno;
 			}
 			else if (ch == '*') {
 				while (ch != EOF) {
-					ch = fgetc(f);
+					ch = fgetc(fsource);
 					if (ch == '\n') ++lineno;
 
 					if (ch == '*') {
-						ch = fgetc(f);
+						ch = fgetc(fsource);
 						if (ch == '/') {
-							ch = fgetc(f);
+							ch = fgetc(fsource);
 							break;
 						}
 
-						ungetc(ch, f);
+						ungetc(ch, fsource);
 					}
 				}
 			}
 			else {
-				ungetc(ch, f);
+				ungetc(ch, fsource);
 				ch = '/';
 			}
 		}
@@ -361,85 +365,85 @@ int next_token_helper() {
 	if (ch == '?') return T_QUESTION;
 
 	if (ch == '=') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '=') return T_EQ;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_ASSIGNMENT;
 	}
 	if (ch == '+') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '+') return T_INC;
 		if (ch == '=') return T_ASSIGNMENT_ADD;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_ADD;
 	}
 	if (ch == '-') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '-') return T_DEC;
 		if (ch == '=') return T_ASSIGNMENT_SUB;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_SUB;
 	}
 	if (ch == '*') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '=') return T_ASSIGNMENT_MUL;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_MUL;
 	}
 	if (ch == '%') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '=') return T_ASSIGNMENT_MOD;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_MOD;
 	}
 	if (ch == '/') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '=') return T_ASSIGNMENT_DIV;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_DIV;
 	}
 	if (ch == '<') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '=') return T_LESS_EQ;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_LESS;
 	}
 	if (ch == '>') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '=') return T_GREATER_EQ;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_GREATER;
 	}
 
 	if (ch == '|') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '|') return T_OR;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_BIT_OR;
 	}
 
 	if (ch == '&') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '&') return T_AND;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_BIT_AND;
 	}
 
 	if (ch == '!') {
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '=') return T_NOT_EQ;
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_NOT;
 	}
 
@@ -455,7 +459,7 @@ int next_token_helper() {
 		int i = 0;
 		do {
 			token_id[i++] = ch;
-			ch = fgetc(f);
+			ch = fgetc(fsource);
 		} while (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '_');
 
 		token_id[i] = 0;
@@ -497,6 +501,9 @@ int next_token_helper() {
 		else if (!strcmp(token_id, "enum")) {
 			t = T_ENUM;
 		}
+		else if (!strcmp(token_id, "const")) {
+			t = T_CONST;
+		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
 				if (!strcmp(types[i], token_id)) {
@@ -507,7 +514,7 @@ int next_token_helper() {
 			}
 		}
 
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return t;
 	}
 
@@ -515,20 +522,20 @@ int next_token_helper() {
 		int n = 0;
 		do {
 			n = n * 10 + (ch - '0');
-			ch = fgetc(f);
+			ch = fgetc(fsource);
 		} while (ch >= '0' && ch <= '9');
 
 		token_num = n;
-		ungetc(ch, f);
+		ungetc(ch, fsource);
 		return T_INT_LIT;
 	}
 
 	if (ch == '"') {
 		int i = 0;
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		while (ch != '"' && ch != EOF) {
 			if (ch == '\\') {
-				ch = fgetc(f);
+				ch = fgetc(fsource);
 
 				if (ch == EOF) continue;
 
@@ -538,7 +545,7 @@ int next_token_helper() {
 			}
 
 			token_id[i++] = ch;
-			ch = fgetc(f);
+			ch = fgetc(fsource);
 		}
 
 		token_id[i] = 0;
@@ -547,9 +554,9 @@ int next_token_helper() {
 
 	if (ch == '\'') {
 		// TODO
-		ch = fgetc(f);
+		ch = fgetc(fsource);
 		if (ch == '\\') {
-			ch = fgetc(f);
+			ch = fgetc(fsource);
 
 			if (ch == 'n') ch = '\n';
 			else if (ch == 'r') ch = '\r';
@@ -557,12 +564,13 @@ int next_token_helper() {
 		}
 		token_num = ch;
 
-		fgetc(f);
+		fgetc(fsource);
 		return T_CHAR_LIT;
 	}
 
 
-	fprintf(stderr, "Syntax error (%d): invalid token %c\n", lineno, ch);
+	//fprintf(stderr, "Syntax error (%d): invalid token %c\n", lineno, ch);
+	printf("Syntax error (%d): invalid token %c\n", lineno, ch);
 	return T_EOF;
 }
 
@@ -586,7 +594,8 @@ void parse_declaration(int ctx);
 
 int check_token(int expected) {
 	if (token != expected) {
-		fprintf(stderr, "Syntax error (%d): unexpected token %s, expected %s\n", lineno, tok2str(token), tok2str(expected));
+		//fprintf(stderr, "Syntax error (%d): unexpected token %s, expected %s\n", lineno, tok2str(token), tok2str(expected));
+		printf("Syntax error (%d): unexpected token %s, expected %s\n", lineno, tok2str(token), tok2str(expected));
 		return 0;
 	}
 	return 1;
@@ -680,7 +689,8 @@ void parse_primary_expr() {
 			emit_push(VAL_INT, val, 4);
 		}
 		else {
-			fprintf(stderr, "Error (%d): unknown identifier %s\n", lineno, token_id);
+			//fprintf(stderr, "Error (%d): unknown identifier %s\n", lineno, token_id);
+			printf("Error (%d): unknown identifier %s\n", lineno, token_id);
 		}
 		next_token();
 		return;
@@ -1055,7 +1065,8 @@ void parse_expr(int min_prec) {
 		else if (op == T_EQ) emit(OP_EQ);
 		else if (op == T_NOT_EQ) emit(OP_NOT_EQ);
 		else {
-			fprintf(stderr, "Internal error (%d): operator not supported %s\n", lineno, tok2str(op));
+			//fprintf(stderr, "Internal error (%d): operator not supported %s\n", lineno, tok2str(op));
+			printf("Internal error (%d): operator not supported %s\n", lineno, tok2str(op));
 		}
 	}
 
@@ -1089,6 +1100,11 @@ void parse_func_params() {
 }
 
 void parse_decl_spec() {
+	if (token == T_CONST) {
+		// consts are not supported yet
+		next_token();
+	}
+
 	check_token(T_TYPEID);
 	
 	type_info_size = 0;
@@ -1270,7 +1286,7 @@ void parse_enum() {
 }
 
 void parse_stmt() {
-	if (token == T_TYPEID) {
+	if (token == T_TYPEID || token == T_CONST) {
 		parse_declaration(DECL_CTX_DEFAULT);
 		return;
 	}
@@ -1762,34 +1778,34 @@ int get_global(const char* s) {
 // asmgen
 
 void gen_cpool() {
-	printf(".const\n");
+	fprintf(ftarget, ".const\n");
 
 	for (int i = 0; i < cpool_size; ) {
 		int size = strlen(&cpool[i]) + 1;
-		printf("__str_%d db ", i);
+		fprintf(ftarget, "__str_%d db ", i);
 
 		int quoted = 0;
 		for (int j = 0; j < size; ++j) {
 			char ch = cpool[i + j];
 			if (ch < ' ' || ch == '\'') {
-				if (quoted) printf("', ", ch);
-				else if (j != 0) printf(", ");
-				printf("%02XH", ch);
+				if (quoted) fprintf(ftarget, "', ", ch);
+				else if (j != 0) fprintf(ftarget, ", ");
+				fprintf(ftarget, "%02XH", ch);
 				quoted = 0;
 			}
 			else {
-				if (j != 0 && !quoted) printf(", '");
-				else if (!quoted) printf("'");
-				printf("%c", ch);
+				if (j != 0 && !quoted) fprintf(ftarget, ", '");
+				else if (!quoted) fprintf(ftarget, "'");
+				fprintf(ftarget, "%c", ch);
 				quoted = 1;
 			}
 		}
 
-		printf("\n");
+		fprintf(ftarget, "\n");
 
 		i += size;
 	}
-	printf("\n");
+	fprintf(ftarget, "\n");
 }
 
 const char* get_basic_type_asm_name(int size) {
@@ -1808,14 +1824,14 @@ void gen_globals() {
 	// public section
 	for (int i = 0; i < nglobals; ++i) {
 		if (global_vars[i][0] == ATTR_EXTERN) {
-			printf("_%s PROTO\n", globals[i]);
+			fprintf(ftarget, "_%s PROTO\n", globals[i]);
 		}
 		else {
-			printf("public _%s\n", globals[i]);
+			fprintf(ftarget, "public _%s\n", globals[i]);
 		}
 	}
 
-	printf(".data\n");
+	fprintf(ftarget, ".data\n");
 	for (int i = 0; i < nglobals; ++i) {
 		if (global_vars[i][0] == ATTR_EXTERN) continue;
 
@@ -1832,30 +1848,30 @@ void gen_globals() {
 
 		
 		if (type_info[type_info_size - 1] == DECL_ARRAY) {
-			printf("_%s %s %d dup (0)\n", globals[i], basic_type_name, array_size);
+			fprintf(ftarget, "_%s %s %d dup (0)\n", globals[i], basic_type_name, array_size);
 		}
 		else {
-			printf("_%s %s 0\n", globals[i], basic_type_name);
+			fprintf(ftarget, "_%s %s 0\n", globals[i], basic_type_name);
 		}
 	}
-	printf("\n");
+	fprintf(ftarget, "\n");
 }
 
 void emit_asm_cmp(const char* op) {
-	printf("  pop eax\n");
-	printf("  pop ecx\n");
-	printf("  cmp ecx, eax\n");
-	printf("  %s al\n", op);
-	printf("  cbw\n");
-	printf("  cwde\n");
-	printf("  push eax\n");
+	fprintf(ftarget, "  pop eax\n");
+	fprintf(ftarget, "  pop ecx\n");
+	fprintf(ftarget, "  cmp ecx, eax\n");
+	fprintf(ftarget, "  %s al\n", op);
+	fprintf(ftarget, "  cbw\n");
+	fprintf(ftarget, "  cwde\n");
+	fprintf(ftarget, "  push eax\n");
 }
 
 void emit_asm_binop(const char* op) {
-	printf("  pop eax\n");
-	printf("  pop ecx\n");
-	printf("  %s ecx, eax\n", op);
-	printf("  push ecx\n");
+	fprintf(ftarget, "  pop eax\n");
+	fprintf(ftarget, "  pop ecx\n");
+	fprintf(ftarget, "  %s ecx, eax\n", op);
+	fprintf(ftarget, "  push ecx\n");
 }
 
 const char* get_asm_type(int size) {
@@ -1893,24 +1909,24 @@ const char* get_asm_reg(int size) {
 void gen_move(const char* dst, const char* src, int offset, int size) {
 	const char* instr = size < 4 ? "movsx" : "mov";
 
-	printf("  %s %s, %s PTR [%s]%+d\n", instr, dst, get_asm_type(size), src, offset);
+	fprintf(ftarget, "  %s %s, %s PTR [%s]%+d\n", instr, dst, get_asm_type(size), src, offset);
 }
 
 void gen_code(int from, int end) {
 	for (int i = from; i < end; ) {
 		int op = opcodes[i++];
 		if (op == OP_FUNC_PROLOGUE) {
-			printf("_%s proc\n", funcname);
-			printf("  push ebp\n");
-			printf("  mov ebp, esp\n");
-			printf("  sub esp, %d\n\n", stack_size);
+			fprintf(ftarget, "_%s proc\n", funcname);
+			fprintf(ftarget, "  push ebp\n");
+			fprintf(ftarget, "  mov ebp, esp\n");
+			fprintf(ftarget, "  sub esp, %d\n\n", stack_size);
 		}
 		else if (op == OP_FUNC_EPILOGUE) {
-			printf("\n__exit_%s:\n", funcname);
-			printf("  mov esp, ebp\n");
-			printf("  pop ebp\n");
-			printf("  ret 0\n");
-			printf("_%s endp\n\n", funcname);
+			fprintf(ftarget, "\n__exit_%s:\n", funcname);
+			fprintf(ftarget, "  mov esp, ebp\n");
+			fprintf(ftarget, "  pop ebp\n");
+			fprintf(ftarget, "  ret 0\n");
+			fprintf(ftarget, "_%s endp\n\n", funcname);
 		}
 		else if (op == OP_PUSH) {
 			int value_type = opcodes[i++];
@@ -1918,10 +1934,10 @@ void gen_code(int from, int end) {
 			int size = opcodes[i++];
 
 			if (value_type == VAL_STR) {
-				printf("  push OFFSET __str_%d\n", value);
+				fprintf(ftarget, "  push OFFSET __str_%d\n", value);
 			}
 			else if (value_type == VAL_INT) {
-				printf("  push %d\n", value);
+				fprintf(ftarget, "  push %d\n", value);
 			}
 			else if (value_type == VAL_LOCAL) {
 				if (size == 0) {
@@ -1929,57 +1945,57 @@ void gen_code(int from, int end) {
 				}
 
 				gen_move("eax", "ebp", value, size);
-				printf("  push eax\n", value);
+				fprintf(ftarget, "  push eax\n", value);
 			}
 			else if (value_type == VAL_LOCAL_ADDR) {
 				if (value >= 0) {
-					printf("  lea eax, DWORD PTR [ebp]+%d \n", value);
+					fprintf(ftarget, "  lea eax, DWORD PTR [ebp]+%d \n", value);
 				}
 				else {
-					printf("  lea eax, DWORD PTR [ebp]%d \n", value);
+					fprintf(ftarget, "  lea eax, DWORD PTR [ebp]%d \n", value);
 				}
 
-				printf("  push eax\n", value);
+				fprintf(ftarget, "  push eax\n", value);
 			}
 			else if (value_type == VAL_GLOB) {
-				printf("  push DWORD PTR _%s\n", globals[value]);
+				fprintf(ftarget, "  push DWORD PTR _%s\n", globals[value]);
 			}
 			else if (value_type == VAL_GLOB_ADDR) {
-				printf("  push OFFSET _%s\n", globals[value]);
+				fprintf(ftarget, "  push OFFSET _%s\n", globals[value]);
 			}
 		}
 		else if (op == OP_DEREF) {
 			int item_size = opcodes[i++];
-			printf("  pop ecx\n");
-			printf("  pop eax\n");
-			printf("  imul ecx, %d\n", item_size);
+			fprintf(ftarget, "  pop ecx\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  imul ecx, %d\n", item_size);
 			gen_move("eax", "eax + ecx", 0, item_size);
 
-			printf("  push eax\n");
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_DEREF_ADDR) {
 			int item_size = opcodes[i++];
-			printf("  pop ecx\n");
-			printf("  pop eax\n");
-			printf("  imul ecx, %d\n", item_size);
-			printf("  lea eax, DWORD PTR [eax + ecx]\n");
-			printf("  push eax\n");
+			fprintf(ftarget, "  pop ecx\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  imul ecx, %d\n", item_size);
+			fprintf(ftarget, "  lea eax, DWORD PTR [eax + ecx]\n");
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_DUP_VALUE) {
 			int size = opcodes[i++];
-			printf("  mov eax, DWORD PTR [esp]\n"); // peek addr from the top of the stack
+			fprintf(ftarget, "  mov eax, DWORD PTR [esp]\n"); // peek addr from the top of the stack
 			gen_move("eax", "eax", 0, size); // dereference addr
-			printf("  push eax\n");
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_SAVE) {
 			int size = opcodes[i++];
 
-			printf("  pop eax\n");
-			printf("  pop ecx\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  pop ecx\n");
 
 			const char* reg = get_asm_reg(size);
-			printf("  mov %s PTR [ecx], %s\n", get_asm_type(size), reg);
-			printf("  push eax\n");
+			fprintf(ftarget, "  mov %s PTR [ecx], %s\n", get_asm_type(size), reg);
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_CALL) {
 			int header_ref = opcodes[i];
@@ -1997,13 +2013,13 @@ void gen_code(int from, int end) {
 
 			// FIXME: support different parameter sizes
 			int st = param_count * 4;
-			printf("  call DWORD PTR [esp+%d]\n", st);
-			printf("  add esp, %d\n", st+4); // size of paremters + pointer to function
-			printf("  push eax\n");
+			fprintf(ftarget, "  call DWORD PTR [esp+%d]\n", st);
+			fprintf(ftarget, "  add esp, %d\n", st+4); // size of paremters + pointer to function
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_RETURN) {
-			printf("  pop eax\n");
-			printf("  jmp __exit_%s\n", funcname);
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  jmp __exit_%s\n", funcname);
 		}
 		else if (op == OP_FOR) {
 			// post increment instructions after body
@@ -2017,32 +2033,32 @@ void gen_code(int from, int end) {
 		}
 		else if (op == OP_JMP) {
 			int label = opcodes[i++];
-			printf("  jmp __%s_%d\n", funcname, label);
+			fprintf(ftarget, "  jmp __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_JMPZ) {
-			printf("  pop eax\n");
-			printf("  test eax, eax\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  test eax, eax\n");
 
 			int label = opcodes[i++];
-			printf("  je __%s_%d\n", funcname, label);
+			fprintf(ftarget, "  je __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_JMPNZ) {
-			printf("  pop eax\n");
-			printf("  test eax, eax\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  test eax, eax\n");
 
 			int label = opcodes[i++];
-			printf("  jne __%s_%d\n", funcname, label);
+			fprintf(ftarget, "  jne __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_CASE) {
 			int var = opcodes[i++];
 			int label = opcodes[i++];
-			printf("  pop eax\n");
-			printf("  cmp DWORD PTR [ebp]%+d, eax\n", var);
-			printf("  jne __%s_%d\n", funcname, label);
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  cmp DWORD PTR [ebp]%+d, eax\n", var);
+			fprintf(ftarget, "  jne __%s_%d\n", funcname, label);
 		}
 		else if (op == OP_LABEL) {
 			int id = opcodes[i++];
-			printf("\n__%s_%d:\n", funcname, id);
+			fprintf(ftarget, "\n__%s_%d:\n", funcname, id);
 		}
 		else if (op == OP_ADD) {
 			emit_asm_binop("add");
@@ -2054,30 +2070,30 @@ void gen_code(int from, int end) {
 			emit_asm_binop("imul");
 		}
 		else if (op == OP_DIV) {
-			printf("  pop ecx\n");
-			printf("  pop eax\n");
-			printf("  cdq\n");
-			printf("  idiv ecx\n", op);
-			printf("  push eax\n");
+			fprintf(ftarget, "  pop ecx\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  cdq\n");
+			fprintf(ftarget, "  idiv ecx\n", op);
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_MOD) {
-			printf("  pop ecx\n");
-			printf("  pop eax\n");
-			printf("  cdq\n");
-			printf("  idiv ecx\n", op);
-			printf("  push edx\n");
+			fprintf(ftarget, "  pop ecx\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  cdq\n");
+			fprintf(ftarget, "  idiv ecx\n", op);
+			fprintf(ftarget, "  push edx\n");
 		}
 		else if (op == OP_INC || op == OP_DEC) {
-			printf("  pop eax\n");
-			printf("  %s DWORD PTR [eax], 1\n", op == OP_INC ? "add" : "sub");
-			printf("  mov eax, DWORD PTR [eax]\n");
-			printf("  push eax\n");
+			fprintf(ftarget, "  pop eax\n");
+			fprintf(ftarget, "  %s DWORD PTR [eax], 1\n", op == OP_INC ? "add" : "sub");
+			fprintf(ftarget, "  mov eax, DWORD PTR [eax]\n");
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_INC_POST || op == OP_DEC_POST) {
-			printf("  pop ecx\n");
-			printf("  mov eax, DWORD PTR [ecx]\n");
-			printf("  %s DWORD PTR  [ecx], 1\n", op == OP_INC_POST ? "add" : "sub");
-			printf("  push eax\n");
+			fprintf(ftarget, "  pop ecx\n");
+			fprintf(ftarget, "  mov eax, DWORD PTR [ecx]\n");
+			fprintf(ftarget, "  %s DWORD PTR  [ecx], 1\n", op == OP_INC_POST ? "add" : "sub");
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_LESS) {
 			emit_asm_cmp("setl");
@@ -2098,25 +2114,25 @@ void gen_code(int from, int end) {
 			emit_asm_cmp("setne");
 		}
 		else if (op == OP_NOT){
-			printf("  pop ecx\n");
-			printf("  xor eax, eax\n");
-			printf("  cmp ecx, eax\n");
-			printf("  sete al\n");
-			printf("  push eax\n");
+			fprintf(ftarget, "  pop ecx\n");
+			fprintf(ftarget, "  xor eax, eax\n");
+			fprintf(ftarget, "  cmp ecx, eax\n");
+			fprintf(ftarget, "  sete al\n");
+			fprintf(ftarget, "  push eax\n");
 		}
 		else if (op == OP_NEG){
-			printf("  neg DWORD PTR [esp]\n");
+			fprintf(ftarget, "  neg DWORD PTR [esp]\n");
 		}
 	}
 }
 
 void gen_asm() {
 	// header
-	printf(".586\n");
-	printf(".model flat\n\n");
-	printf("includelib msvcrtd\n");
+	fprintf(ftarget, ".586\n");
+	fprintf(ftarget, ".model flat\n\n");
+	fprintf(ftarget, "includelib msvcrtd\n");
 
-	printf(".code\n\n");
+	fprintf(ftarget, ".code\n\n");
 
 	lineno = 1;
 	next_token();
@@ -2125,7 +2141,7 @@ void gen_asm() {
 	gen_globals();
 	gen_cpool();
 
-	printf("end\n");
+	fprintf(ftarget, "end\n");
 	
 }
 // 
@@ -2133,24 +2149,24 @@ void gen_asm() {
 void dump_type(int* type_info, int size) {
 	int array_size = get_type_array_size(type_info, size);
 	int basic_type = get_basic_type(type_info, size);
-	printf("!!! TYPE basic_type: %s, size %d\n", types[basic_type], array_size);
+	printf("TYPE basic_type: %s, size %d\n", types[basic_type], array_size);
 
 	for (int i = size - 1; i >= 0; --i) {
 		switch (type_info[i]) {
 		case DECL_ARRAY:
-			printf("[%d] of ", type_info[--i]);
+			fprintf(ftarget, "[%d] of ", type_info[--i]);
 			break;
 
 		case DECL_PTR:
-			printf("ptr to ");
+			fprintf(ftarget, "ptr to ");
 			break;
 
 		case DECL_FUN:
-			printf("function returning ");
+			fprintf(ftarget, "function returning ");
 			break;
 
 		case DECL_BASIC:
-			printf("%s\n", types[type_info[--i]]);
+			fprintf(ftarget, "%s\n", types[type_info[--i]]);
 			break;
 		}
 	}
@@ -2303,7 +2319,10 @@ int add_type(const char* s, int size) {
 
 int main(int argc, char** argv) {
 
-	if (argc != 2) return -1;
+	if (argc != 3)  {
+		printf("Usage ccomp <source.c> <target>\n");
+		return -1;
+	}
 
 	add_int_const("EOF", -1);
 
@@ -2324,9 +2343,11 @@ int main(int argc, char** argv) {
 	add_type("int", 4);
 	add_type("FILE", 4);
 
-	f = fopen(argv[1], "r");
+	fsource = fopen(argv[1], "r");
+	ftarget = fopen(argv[2], "w");
 	gen_asm();
 
-	fclose(f);
+	fclose(fsource);
+	fclose(ftarget);
 
 }

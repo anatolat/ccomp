@@ -54,7 +54,7 @@ goto :end
   if exist "%name%.exe" del /f /q "%name%.exe"
   if exist "%name%.out" del /f /q "%name%.out"
 
-  %CC% %input% > %name%.asm 2> %name%.err
+  %CC% %input% %name%.asm 2> %name%.err
   if not %errorlevel% equ 0 (goto :fail)
 
   ML /c /nologo /Sg /Zi  /W3 /errorReport:prompt  /Ta %name%.asm 
