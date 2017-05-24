@@ -73,27 +73,22 @@ char token_id[256];
 int token_num;
 int lineno;
 
-int ntypes = 3;
+int ntypes;
+const char* types[256];
+int types_sizes[256];
+
 enum {
 	TYPE_VOID,
 	TYPE_CHAR,
 	TYPE_INT
 };
 
-char* types[256] = {
-	"void",
-	"char",
-	"int",
-};
-int types_sizes[256] = {
-	0,
-	1,
-	4,
-};
+int add_type(const char* s, int size);
+
 
 // cpool
 int cpool_size = 0;
-char cpool[1024];
+char cpool[65536];
 
 int nint_consts = 0;
 char int_consts[256][64];
@@ -585,8 +580,8 @@ enum {
 };
 
 void parse_assignment_expr();
-void parse_stmts(int);
-void parse_declaration(int);
+void parse_stmts(int terminator);
+void parse_declaration(int ctx);
 
 
 int check_token(int expected) {
@@ -748,8 +743,6 @@ void parse_postfix_expr() {
 
 			//dump_type(type_info, type_info_size);
 			get_item_type_info(item_type_info, &item_type_info_size, type_info, type_info_size);
-
-			convert_to_addr(last_value_ref);
 
 			parse_assignment_expr();
 
@@ -2135,6 +2128,10 @@ void dump_type(int* type_info, int size) {
 			printf("ptr to ");
 			break;
 
+		case DECL_FUN:
+			printf("function returning ");
+			break;
+
 		case DECL_BASIC:
 			printf("%s\n", types[type_info[--i]]);
 			break;
@@ -2150,6 +2147,7 @@ int get_type_byte_size(int* type_info, int size) {
 			result *= type_info[--i];
 			break;
 
+		case DECL_FUN:
 		case DECL_PTR:
 			result *= 4;
 			return result;
@@ -2171,6 +2169,7 @@ int get_type_array_size(int* type_info, int size) {
 			result *= type_info[--i];
 			break;
 
+		case DECL_FUN:
 		case DECL_PTR:
 		case DECL_BASIC:
 			return result;
@@ -2190,6 +2189,7 @@ void get_item_type_info(int* dest_type_info, int* dest_size, int* type_info, int
 		*dest_size = type_info_size - 2;
 		break;
 
+	case DECL_FUN:
 	case DECL_PTR:
 		*dest_size = type_info_size - 1;
 		break;
@@ -2276,23 +2276,36 @@ void add_extern_func(const char* s) {
 
 	int id = add_global(s);
 	global_vars[id][0] = ATTR_EXTERN;
+}
 
+int add_type(const char* s, int size) {
+	int id = ntypes++;
+	types[id] = s;
+	types_sizes[id] = size;
 }
 
 int main(int argc, char** argv) {
 
 	if (argc != 2) return -1;
 
+	add_int_const("EOF", -1);
+
 	add_extern_func("fopen");
 	add_extern_func("fclose");
 	add_extern_func("fgetc");
 	add_extern_func("ungetc");
+	add_extern_func("fprintf");
 	add_extern_func("printf");
 	add_extern_func("exit");
 	add_extern_func("strcpy");
 	add_extern_func("strcmp");
 	add_extern_func("strlen");
 	add_extern_func("memcpy");
+
+	add_type("void", 0);
+	add_type("char", 1);
+	add_type("int", 4);
+	add_type("FILE", 4);
 
 	f = fopen(argv[1], "r");
 	gen_asm();
