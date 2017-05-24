@@ -67,6 +67,7 @@ enum {
 	, T_DEFAULT
 	, T_ENUM
 	, T_CONST
+	, T_SIZEOF
 };
 
 FILE* fsource;
@@ -300,6 +301,7 @@ const char* tok2str(int tok) {
 	case T_DEFAULT: return "DEFAULT";
 	case T_ENUM: return "ENUM";
 	case T_CONST: return "CONST";
+	case T_SIZEOF: return "SIZEOF";
 	}
 	return "XXX";
 }
@@ -503,6 +505,9 @@ int next_token_helper() {
 		}
 		else if (!strcmp(token_id, "const")) {
 			t = T_CONST;
+		}
+		else if (!strcmp(token_id, "sizeof")) {
+			t = T_SIZEOF;
 		}
 		else {
 			for (int i = 0; i < ntypes; ++i) {
@@ -862,7 +867,19 @@ void parse_unary_expr() {
 		//dump_type(type_info, type_info_size);
 		return;
 	}
-	
+	if (token == T_SIZEOF) {
+		next_token();
+		
+		int code = nopcodes;
+		parse_unary_expr();
+
+		nopcodes = code;
+
+		int result = get_type_byte_size(type_info, type_info_size);
+		emit_push(VAL_INT, result, 0);
+		return;
+	}
+
 	parse_postfix_expr();
 }
 

@@ -2,6 +2,7 @@
 call "%VS120COMNTOOLS%\vsvars32.bat"
 
 setlocal enabledelayedexpansion
+
 set CC=..\Debug\ccomp
 
 set $sucessful_count=0
@@ -34,7 +35,8 @@ test_compound_assignment_ptr.c ^
 test_logical_expr.c ^
 test_ternary.c ^
 test_switch.c ^
-test_enum.c
+test_enum.c ^
+test_sizeof.c
 
 ) else (
   set src=%1
