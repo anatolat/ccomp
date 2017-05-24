@@ -1,6 +1,4 @@
- - enums
  - array initialization
  - global variable initialization
  - pointer arithmetic
- - sizeof
  - Clean up stack after calling function

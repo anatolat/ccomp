@@ -1,5 +1,4 @@
 #define _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <string.h>
 
@@ -2332,6 +2331,8 @@ int add_type(const char* s, int size) {
 	int id = ntypes++;
 	types[id] = s;
 	types_sizes[id] = size;
+
+	return id;
 }
 
 int main(int argc, char** argv) {

@@ -3,7 +3,7 @@ call "%VS120COMNTOOLS%\vsvars32.bat"
 
 setlocal enabledelayedexpansion
 
-set CC=..\Debug\ccomp
+set CC=..\bin\ccomp
 
 set $sucessful_count=0
 set $failed_count=0
