@@ -87,10 +87,10 @@ int add_type(const char* s, int size);
 
 
 // cpool
-int cpool_size = 0;
+int cpool_size;
 char cpool[65536];
 
-int nint_consts = 0;
+int nint_consts;
 char int_consts[256][64];
 int int_consts_vals[256];
 
@@ -169,7 +169,7 @@ enum {
 	ATTR_EXTERN = 1
 };
 
-int nopcodes = 0;
+int nopcodes;
 int opcodes[65536];
 
 int emit(int op);
@@ -202,7 +202,7 @@ int nglobals;
 char globals[256][64];
 int global_vars[256][64];
 
-int last_value_ref = -1;
+int last_value_ref;
 
 int type_info_size;
 int type_info[62];
@@ -710,7 +710,7 @@ void parse_postfix_expr() {
 
 			last_value_ref = nopcodes;
 			emit(OP_CALL);
-			int sizes[256] = { 0 }; // size of the code generated for each parameter
+			int sizes[256]; // size of the code generated for each parameter
 			int call_header = emit(0);
 
 			int param_count = 0;
@@ -928,6 +928,40 @@ void emit_compound_save(int op, int lvalue_size) {
 	emit_save(lvalue_size);
 }
 
+void finish_or_expr(int or_label)  {
+	emit_jmpnz(or_label);
+	emit_push(VAL_INT, 0, 0);
+
+	int end = nlabels++;
+	emit(OP_JMP);
+	emit(end);
+
+	emit(OP_LABEL);
+	emit(or_label);
+
+	emit_push(VAL_INT, 1, 0);
+
+	emit(OP_LABEL);
+	emit(end);
+}
+
+void finish_and_expr(int and_label) {
+	emit_jmpz(and_label);
+	emit_push(VAL_INT, 1, 0);
+
+	int end = nlabels++;
+	emit(OP_JMP);
+	emit(end);
+
+	emit(OP_LABEL);
+	emit(and_label);
+
+	emit_push(VAL_INT, 0, 0);
+
+	emit(OP_LABEL);
+	emit(end);
+}
+
 void parse_expr(int min_prec) {
 	parse_unary_expr();
 
@@ -940,6 +974,15 @@ void parse_expr(int min_prec) {
 
 		int op = token;
 		next_token();
+
+		if (op != T_OR && or_label != -1) {
+			finish_or_expr(or_label);
+			or_label = -1;
+		}
+		if (op != T_AND && and_label != -1) {
+			finish_and_expr(and_label);
+			and_label = -1;
+		}
 
 		if (op == T_OR) {
 			if (or_label == -1) or_label = nlabels++;
@@ -1017,37 +1060,11 @@ void parse_expr(int min_prec) {
 	}
 
 	if (or_label != -1) {
-		emit_jmpnz(or_label);
-		emit_push(VAL_INT, 0, 0);
-
-		int end = nlabels++;
-		emit(OP_JMP);
-		emit(end);
-
-		emit(OP_LABEL);
-		emit(or_label);
-
-		emit_push(VAL_INT, 1, 0);
-
-		emit(OP_LABEL);
-		emit(end);
+		finish_or_expr(or_label);
 	}
 
 	if (and_label != -1) {
-		emit_jmpz(and_label);
-		emit_push(VAL_INT, 1, 0);
-
-		int end = nlabels++;
-		emit(OP_JMP);
-		emit(end);
-
-		emit(OP_LABEL);
-		emit(and_label);
-
-		emit_push(VAL_INT, 0, 0);
-
-		emit(OP_LABEL);
-		emit(end);
+		finish_and_expr(and_label);
 	}
 }
 

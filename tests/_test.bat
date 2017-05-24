@@ -9,6 +9,7 @@ set $failed_count=0
 
 if "%1"=="" (
   set src= ^
+empty.c ^
 helloworld.c ^
 fact_rec.c ^
 test_multiargs.c ^
