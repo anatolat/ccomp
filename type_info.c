@@ -91,11 +91,16 @@ void get_item_type_info(int* dest_type_info, int* dest_size, int* type_info, int
 		*dest_size = type_info_size;
 		break;
 	}
-	memcpy(dest_type_info, type_info, *dest_size * sizeof(type_info[0]));
+	copy_type_info(dest_type_info, type_info, *dest_size);
 }
 
 void set_int_type() {
 	type_info_size = 0;
 	type_info[type_info_size++] = TYPE_INT;
 	type_info[type_info_size++] = DECL_BASIC;
+}
+
+int copy_type_info(int* dest_type_info, int* type_info, int type_info_size) {
+	memcpy(dest_type_info, type_info, type_info_size * sizeof(type_info[0]));
+	return type_info_size;
 }

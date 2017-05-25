@@ -1,6 +1,9 @@
 #include  <stdio.h>
+#include  <string.h>
 #include "codegen.h"
 #include "context.h"
+#include "type_info.h"
+#include "types.h"
 
 int nopcodes;
 int opcodes[65536];
@@ -18,7 +21,7 @@ void emit_push(int val_type, int val, int size) {
 	emit(size);
 }
 
-void emit_asm_cmp(FILE* ftarget, const char* op) {
+void gen_asm_cmp(FILE* ftarget, const char* op) {
 	fprintf(ftarget, "  pop eax\n");
 	fprintf(ftarget, "  pop ecx\n");
 	fprintf(ftarget, "  cmp ecx, eax\n");
@@ -76,20 +79,23 @@ void gen_move(FILE* ftarget, const char* dst, const char* src, int offset, int s
 void gen_code(FILE* ftarget, const char* funcname, int from, int end) {
 	for (int i = from; i < end;) {
 		int op = opcodes[i++];
-		if (op == OP_FUNC_PROLOGUE) {
+		switch (op) {
+		case OP_FUNC_PROLOGUE: {
 			fprintf(ftarget, "_%s proc\n", funcname);
 			fprintf(ftarget, "  push ebp\n");
 			fprintf(ftarget, "  mov ebp, esp\n");
 			fprintf(ftarget, "  sub esp, %d\n\n", stack_size);
+			break;
 		}
-		else if (op == OP_FUNC_EPILOGUE) {
+		case OP_FUNC_EPILOGUE: {
 			fprintf(ftarget, "\n__exit_%s:\n", funcname);
 			fprintf(ftarget, "  mov esp, ebp\n");
 			fprintf(ftarget, "  pop ebp\n");
 			fprintf(ftarget, "  ret 0\n");
 			fprintf(ftarget, "_%s endp\n\n", funcname);
+			break;
 		}
-		else if (op == OP_PUSH) {
+		case OP_PUSH: {
 			int value_type = opcodes[i++];
 			int value = opcodes[i++];
 			int size = opcodes[i++];
@@ -124,8 +130,9 @@ void gen_code(FILE* ftarget, const char* funcname, int from, int end) {
 			else if (value_type == VAL_GLOB_ADDR) {
 				fprintf(ftarget, "  push OFFSET _%s\n", globals[value]);
 			}
+			break;
 		}
-		else if (op == OP_DEREF) {
+		case OP_DEREF: {
 			int item_size = opcodes[i++];
 			fprintf(ftarget, "  pop ecx\n");
 			fprintf(ftarget, "  pop eax\n");
@@ -133,22 +140,25 @@ void gen_code(FILE* ftarget, const char* funcname, int from, int end) {
 			gen_move(ftarget, "eax", "eax + ecx", 0, item_size);
 
 			fprintf(ftarget, "  push eax\n");
+			break;
 		}
-		else if (op == OP_DEREF_ADDR) {
+		case OP_DEREF_ADDR: {
 			int item_size = opcodes[i++];
 			fprintf(ftarget, "  pop ecx\n");
 			fprintf(ftarget, "  pop eax\n");
 			fprintf(ftarget, "  imul ecx, %d\n", item_size);
 			fprintf(ftarget, "  lea eax, DWORD PTR [eax + ecx]\n");
 			fprintf(ftarget, "  push eax\n");
+			break;
 		}
-		else if (op == OP_DUP_VALUE) {
+		case OP_DUP_VALUE: {
 			int size = opcodes[i++];
 			fprintf(ftarget, "  mov eax, DWORD PTR [esp]\n"); // peek addr from the top of the stack
 			gen_move(ftarget, "eax", "eax", 0, size); // dereference addr
 			fprintf(ftarget, "  push eax\n");
+			break;
 		}
-		else if (op == OP_SAVE) {
+		case OP_SAVE: {
 			int size = opcodes[i++];
 
 			fprintf(ftarget, "  pop eax\n");
@@ -157,8 +167,9 @@ void gen_code(FILE* ftarget, const char* funcname, int from, int end) {
 			const char* reg = get_asm_reg(size);
 			fprintf(ftarget, "  mov %s PTR [ecx], %s\n", get_asm_type(size), reg);
 			fprintf(ftarget, "  push eax\n");
+			break;
 		}
-		else if (op == OP_CALL) {
+		case OP_CALL: {
 			int header_ref = opcodes[i];
 			int param_count = opcodes[header_ref];
 
@@ -177,12 +188,14 @@ void gen_code(FILE* ftarget, const char* funcname, int from, int end) {
 			fprintf(ftarget, "  call DWORD PTR [esp+%d]\n", st);
 			fprintf(ftarget, "  add esp, %d\n", st + 4); // size of paremters + pointer to function
 			fprintf(ftarget, "  push eax\n");
+			break;
 		}
-		else if (op == OP_RETURN) {
+		case OP_RETURN: {
 			fprintf(ftarget, "  pop eax\n");
 			fprintf(ftarget, "  jmp __exit_%s\n", funcname);
+			break;
 		}
-		else if (op == OP_FOR) {
+		case OP_FOR: {
 			// post increment instructions after body
 
 			int increment_end = opcodes[i++];
@@ -191,98 +204,175 @@ void gen_code(FILE* ftarget, const char* funcname, int from, int end) {
 			gen_code(ftarget, funcname, i, increment_end);
 
 			i = body_end;
+			break;
 		}
-		else if (op == OP_JMP) {
+		case OP_JMP: {
 			int label = opcodes[i++];
 			fprintf(ftarget, "  jmp __%s_%d\n", funcname, label);
+			break;
 		}
-		else if (op == OP_JMPZ) {
+		case OP_JMPZ: {
 			fprintf(ftarget, "  pop eax\n");
 			fprintf(ftarget, "  test eax, eax\n");
 
 			int label = opcodes[i++];
 			fprintf(ftarget, "  je __%s_%d\n", funcname, label);
+			break;
 		}
-		else if (op == OP_JMPNZ) {
+		case OP_JMPNZ: {
 			fprintf(ftarget, "  pop eax\n");
 			fprintf(ftarget, "  test eax, eax\n");
 
 			int label = opcodes[i++];
 			fprintf(ftarget, "  jne __%s_%d\n", funcname, label);
+			break;
 		}
-		else if (op == OP_CASE) {
+		case OP_CASE: {
 			int var = opcodes[i++];
 			int label = opcodes[i++];
 			fprintf(ftarget, "  pop eax\n");
 			fprintf(ftarget, "  cmp DWORD PTR [ebp]%+d, eax\n", var);
 			fprintf(ftarget, "  jne __%s_%d\n", funcname, label);
+			break;
 		}
-		else if (op == OP_LABEL) {
+		case OP_LABEL: {
 			int id = opcodes[i++];
 			fprintf(ftarget, "\n__%s_%d:\n", funcname, id);
+			break;
 		}
-		else if (op == OP_ADD) {
-			emit_asm_binop(ftarget, "add");
-		}
-		else if (op == OP_SUB) {
-			emit_asm_binop(ftarget, "sub");
-		}
-		else if (op == OP_MUL) {
-			emit_asm_binop(ftarget, "imul");
-		}
-		else if (op == OP_DIV) {
+		case OP_ADD: emit_asm_binop(ftarget, "add"); break;
+		case OP_SUB: emit_asm_binop(ftarget, "sub"); break;
+		case OP_MUL: emit_asm_binop(ftarget, "imul"); break;
+		case OP_DIV: case OP_MOD:
 			fprintf(ftarget, "  pop ecx\n");
 			fprintf(ftarget, "  pop eax\n");
 			fprintf(ftarget, "  cdq\n");
-			fprintf(ftarget, "  idiv ecx\n", op);
-			fprintf(ftarget, "  push eax\n");
-		}
-		else if (op == OP_MOD) {
-			fprintf(ftarget, "  pop ecx\n");
-			fprintf(ftarget, "  pop eax\n");
-			fprintf(ftarget, "  cdq\n");
-			fprintf(ftarget, "  idiv ecx\n", op);
-			fprintf(ftarget, "  push edx\n");
-		}
-		else if (op == OP_INC || op == OP_DEC) {
+			fprintf(ftarget, "  idiv ecx\n");
+			fprintf(ftarget, "  push %s\n", op == OP_DIV ? "eax" : "edx");
+			break;
+		case OP_INC: case OP_DEC:
 			fprintf(ftarget, "  pop eax\n");
 			fprintf(ftarget, "  %s DWORD PTR [eax], 1\n", op == OP_INC ? "add" : "sub");
 			fprintf(ftarget, "  mov eax, DWORD PTR [eax]\n");
 			fprintf(ftarget, "  push eax\n");
-		}
-		else if (op == OP_INC_POST || op == OP_DEC_POST) {
+			break;
+		case OP_INC_POST: case OP_DEC_POST:
 			fprintf(ftarget, "  pop ecx\n");
 			fprintf(ftarget, "  mov eax, DWORD PTR [ecx]\n");
 			fprintf(ftarget, "  %s DWORD PTR  [ecx], 1\n", op == OP_INC_POST ? "add" : "sub");
 			fprintf(ftarget, "  push eax\n");
-		}
-		else if (op == OP_LESS) {
-			emit_asm_cmp(ftarget, "setl");
-		}
-		else if (op == OP_GREATER) {
-			emit_asm_cmp(ftarget, "setg");
-		}
-		else if (op == OP_LESS_EQ) {
-			emit_asm_cmp(ftarget, "setle");
-		}
-		else if (op == OP_GREATER_EQ) {
-			emit_asm_cmp(ftarget, "setge");
-		}
-		else if (op == OP_EQ) {
-			emit_asm_cmp(ftarget, "sete");
-		}
-		else if (op == OP_NOT_EQ) {
-			emit_asm_cmp(ftarget, "setne");
-		}
-		else if (op == OP_NOT){
+			break;
+		case OP_LESS:
+			gen_asm_cmp(ftarget, "setl");
+			break;
+		case OP_GREATER:
+			gen_asm_cmp(ftarget, "setg");
+			break;
+		case OP_LESS_EQ:
+			gen_asm_cmp(ftarget, "setle");
+			break;
+		case OP_GREATER_EQ:
+			gen_asm_cmp(ftarget, "setge");
+			break;
+		case OP_EQ:
+			gen_asm_cmp(ftarget, "sete");
+			break;
+		case OP_NOT_EQ:
+			gen_asm_cmp(ftarget, "setne");
+			break;
+		case OP_NOT:
 			fprintf(ftarget, "  pop ecx\n");
 			fprintf(ftarget, "  xor eax, eax\n");
 			fprintf(ftarget, "  cmp ecx, eax\n");
 			fprintf(ftarget, "  sete al\n");
 			fprintf(ftarget, "  push eax\n");
-		}
-		else if (op == OP_NEG){
+			break;
+		case OP_NEG:
 			fprintf(ftarget, "  neg DWORD PTR [esp]\n");
+			break;
+		default:
+			printf("Internal error (%s): unknown opcode %d\n", funcname, op);
+			break;
 		}
 	}
+}
+
+void gen_cpool(FILE* ftarget) {
+	fprintf(ftarget, ".const\n");
+
+	for (int i = 0; i < cpool_size;) {
+		int size = strlen(&cpool[i]) + 1;
+		fprintf(ftarget, "__str_%d db ", i);
+
+		int quoted = 0;
+		for (int j = 0; j < size; ++j) {
+			char ch = cpool[i + j];
+			if (ch < ' ' || ch == '\'') {
+				if (quoted) fprintf(ftarget, "', ", ch);
+				else if (j != 0) fprintf(ftarget, ", ");
+				fprintf(ftarget, "%02XH", ch);
+				quoted = 0;
+			}
+			else {
+				if (j != 0 && !quoted) fprintf(ftarget, ", '");
+				else if (!quoted) fprintf(ftarget, "'");
+				fprintf(ftarget, "%c", ch);
+				quoted = 1;
+			}
+		}
+
+		fprintf(ftarget, "\n");
+
+		i += size;
+	}
+	fprintf(ftarget, "\n");
+}
+
+const char* get_basic_type_asm_name(int size) {
+	switch (size) {
+	case 1:
+		return "db";
+	case 2:
+		return "dw";
+	case 4:
+		return "dd";
+	}
+	return 0;
+}
+
+void gen_globals(FILE* ftarget) {
+	// public section
+	for (int i = 0; i < nglobals; ++i) {
+		if (global_vars[i][0] == ATTR_EXTERN) {
+			fprintf(ftarget, "_%s PROTO\n", globals[i]);
+		}
+		else {
+			fprintf(ftarget, "public _%s\n", globals[i]);
+		}
+	}
+
+	fprintf(ftarget, ".data\n");
+	for (int i = 0; i < nglobals; ++i) {
+		if (global_vars[i][0] == ATTR_EXTERN) continue;
+
+		int type_size = global_vars[i][1];
+		if (global_vars[i][2 + type_size - 1] == DECL_FUN) continue;
+
+		int type_info_size = global_vars[i][1];
+		int* type_info = &global_vars[i][2];
+
+		int basic_type = get_basic_type(type_info, type_info_size);
+		const char* basic_type_name = get_basic_type_asm_name(types_sizes[basic_type]);
+
+		int array_size = get_type_array_size(type_info, type_info_size);
+
+
+		if (type_info[type_info_size - 1] == DECL_ARRAY) {
+			fprintf(ftarget, "_%s %s %d dup (0)\n", globals[i], basic_type_name, array_size);
+		}
+		else {
+			fprintf(ftarget, "_%s %s 0\n", globals[i], basic_type_name);
+		}
+	}
+	fprintf(ftarget, "\n");
 }

@@ -66,168 +66,124 @@ int next_token_helper() {
 
 	token_id[0] = 0;
 
-	if (ch == EOF) return T_EOF;
-	if (ch == ';') return T_SEMI;
-	if (ch == ',') return T_COMMA;
-	if (ch == '.') return T_PERIOD;
-	if (ch == ':') return T_COLON;
-	if (ch == '?') return T_QUESTION;
-
-	if (ch == '=') {
+	switch (ch) {
+	case EOF: return T_EOF;
+	case ';': return T_SEMI;
+	case ',': return T_COMMA;
+	case '.': return T_PERIOD;
+	case ':': return T_COLON;
+	case '?': return T_QUESTION;
+	case '=':
 		ch = fgetc(fsource);
 		if (ch == '=') return T_EQ;
 
 		ungetc(ch, fsource);
 		return T_ASSIGNMENT;
-	}
-	if (ch == '+') {
+	case '+':
 		ch = fgetc(fsource);
 		if (ch == '+') return T_INC;
 		if (ch == '=') return T_ASSIGNMENT_ADD;
 
 		ungetc(ch, fsource);
 		return T_ADD;
-	}
-	if (ch == '-') {
+	case '-':
 		ch = fgetc(fsource);
 		if (ch == '-') return T_DEC;
 		if (ch == '=') return T_ASSIGNMENT_SUB;
 
 		ungetc(ch, fsource);
 		return T_SUB;
-	}
-	if (ch == '*') {
+	case '*':
 		ch = fgetc(fsource);
 		if (ch == '=') return T_ASSIGNMENT_MUL;
 
 		ungetc(ch, fsource);
 		return T_MUL;
-	}
-	if (ch == '%') {
+	case '%':
 		ch = fgetc(fsource);
 		if (ch == '=') return T_ASSIGNMENT_MOD;
 
 		ungetc(ch, fsource);
 		return T_MOD;
-	}
-	if (ch == '/') {
+	case '/':
 		ch = fgetc(fsource);
 		if (ch == '=') return T_ASSIGNMENT_DIV;
 
 		ungetc(ch, fsource);
 		return T_DIV;
-	}
-	if (ch == '<') {
+	case '<':
 		ch = fgetc(fsource);
 		if (ch == '=') return T_LESS_EQ;
 
 		ungetc(ch, fsource);
 		return T_LESS;
-	}
-	if (ch == '>') {
+	case '>':
 		ch = fgetc(fsource);
 		if (ch == '=') return T_GREATER_EQ;
 
 		ungetc(ch, fsource);
 		return T_GREATER;
-	}
-
-	if (ch == '|') {
+	case '|':
 		ch = fgetc(fsource);
 		if (ch == '|') return T_OR;
 
 		ungetc(ch, fsource);
 		return T_BIT_OR;
-	}
-
-	if (ch == '&') {
+	case '&':
 		ch = fgetc(fsource);
 		if (ch == '&') return T_AND;
 
 		ungetc(ch, fsource);
 		return T_BIT_AND;
-	}
-
-	if (ch == '!') {
+	case '!':
 		ch = fgetc(fsource);
 		if (ch == '=') return T_NOT_EQ;
 
 		ungetc(ch, fsource);
 		return T_NOT;
+	case '(': return T_LPAREN;
+	case ')': return T_RPAREN;
+	case '[': return T_LBRACKET;
+	case ']': return T_RBRACKET;
+	case '{': return T_LCURLY;
+	case '}': return T_RCURLY;
 	}
 
-	if (ch == '(') return T_LPAREN;
-	if (ch == ')') return T_RPAREN;
-	if (ch == '[') return T_LBRACKET;
-	if (ch == ']') return T_RBRACKET;
-	if (ch == '{') return T_LCURLY;
-	if (ch == '}') return T_RCURLY;
-
 	if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z') {
-
 		int i = 0;
 		do {
 			token_id[i++] = ch;
 			ch = fgetc(fsource);
 		} while (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '_');
 
+		ungetc(ch, fsource);
+
 		token_id[i] = 0;
 
-		int t = T_ID;
-		if (!strcmp(token_id, "return")) {
-			t = T_RETURN;
-		}
-		else if (!strcmp(token_id, "if")) {
-			t = T_IF;
-		}
-		else if (!strcmp(token_id, "while")) {
-			t = T_WHILE;
-		}
-		else if (!strcmp(token_id, "do")) {
-			t = T_DO;
-		}
-		else if (!strcmp(token_id, "for")) {
-			t = T_FOR;
-		}
-		else if (!strcmp(token_id, "else")) {
-			t = T_ELSE;
-		}
-		else if (!strcmp(token_id, "break")) {
-			t = T_BREAK;
-		}
-		else if (!strcmp(token_id, "continue")) {
-			t = T_CONTINUE;
-		}
-		else if (!strcmp(token_id, "switch")) {
-			t = T_SWITCH;
-		}
-		else if (!strcmp(token_id, "case")) {
-			t = T_CASE;
-		}
-		else if (!strcmp(token_id, "default")) {
-			t = T_DEFAULT;
-		}
-		else if (!strcmp(token_id, "enum")) {
-			t = T_ENUM;
-		}
-		else if (!strcmp(token_id, "const")) {
-			t = T_CONST;
-		}
-		else if (!strcmp(token_id, "sizeof")) {
-			t = T_SIZEOF;
-		}
+		if (!strcmp(token_id, "return")) { return T_RETURN; }
+		else if (!strcmp(token_id, "if")) { return T_IF; }
+		else if (!strcmp(token_id, "while")) { return T_WHILE; }
+		else if (!strcmp(token_id, "do")) { return T_DO; }
+		else if (!strcmp(token_id, "for")) { return T_FOR; }
+		else if (!strcmp(token_id, "else")) { return T_ELSE; }
+		else if (!strcmp(token_id, "break")) { return T_BREAK; }
+		else if (!strcmp(token_id, "continue")) { return T_CONTINUE; }
+		else if (!strcmp(token_id, "switch")) { return T_SWITCH; }
+		else if (!strcmp(token_id, "case")) { return T_CASE; }
+		else if (!strcmp(token_id, "default")) { return T_DEFAULT; }
+		else if (!strcmp(token_id, "enum")) { return T_ENUM; }
+		else if (!strcmp(token_id, "const")) { return T_CONST; }
+		else if (!strcmp(token_id, "sizeof")) { return T_SIZEOF; }
 		else {
 			for (int i = 0; i < ntypes; ++i) {
 				if (!strcmp(types[i], token_id)) {
-					t = T_TYPEID;
 					token_num = i;
-					break;
+					return T_TYPEID;
 				}
 			}
-		}
 
-		ungetc(ch, fsource);
-		return t;
+			return T_ID;
+		}
 	}
 
 	if (ch >= '0' && ch <= '9') {

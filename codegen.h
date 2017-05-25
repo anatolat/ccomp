@@ -56,3 +56,5 @@ void emit_push(int val_type, int val, int size);
 
 
 void gen_code(FILE* ftarget, const char* funcname, int from, int end);
+void gen_cpool(FILE* ftarget);
+void gen_globals(FILE* ftarget);

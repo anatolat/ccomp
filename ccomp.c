@@ -9,21 +9,6 @@
 
 FILE* ftarget;
 
-// cpool
-int cpool_size;
-char cpool[65536];
-
-int nint_consts;
-char int_consts[256][64];
-int int_consts_vals[256];
-
-int add_str(const char* s);
-
-int add_int_const(const char* name, int value);
-int get_int_const(const char* name);
-
-// end cpool
-
 
 enum {
 	SCOPE_BLOCK,
@@ -104,7 +89,9 @@ int try_parse_token(int expected) {
 
 void parse_primary_expr() {
 	last_value_ref = nopcodes;
-	if (token == T_INT_LIT) {		
+
+	switch (token) {
+	case T_INT_LIT: {
 		emit_push(VAL_INT, token_num, 0);
 
 		type_info_size = 0;
@@ -114,7 +101,7 @@ void parse_primary_expr() {
 		next_token();
 		return;
 	}
-	if (token == T_STR_LIT) {
+	case T_STR_LIT: {
 		int cid = add_str(token_id);
 		emit_push(VAL_STR, cid, 0);
 
@@ -126,7 +113,7 @@ void parse_primary_expr() {
 		next_token();
 		return;
 	}
-	if (token == T_CHAR_LIT) {
+	case T_CHAR_LIT: {
 		emit_push(VAL_INT, token_num, 0);
 
 		type_info_size = 0;
@@ -136,7 +123,7 @@ void parse_primary_expr() {
 		next_token();
 		return;
 	}
-	if (token == T_LPAREN) {
+	case T_LPAREN: {
 		next_token();
 
 		parse_assignment_expr();
@@ -144,49 +131,49 @@ void parse_primary_expr() {
 		parse_token(T_RPAREN);
 		return;
 	}
-	if (check_token(T_ID)) {
-		int id = get_local(token_id);
-		if (id != -1) {
-			int offs = local_vars[id][0];
+	default:
+		if (check_token(T_ID)) {
+			int id = get_local(token_id);
+			if (id != -1) {
+				int offs = local_vars[id][0];
 
-			type_info_size = local_vars[id][1];
-			memcpy(type_info, &local_vars[id][2], type_info_size * sizeof(type_info[0]));
+				type_info_size = copy_type_info(type_info, &local_vars[id][2], local_vars[id][1]);
 
-			int is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
-			int size = get_type_byte_size(type_info, type_info_size);
+				int is_addr = type_info[type_info_size - 1] == DECL_ARRAY;
+				int size = get_type_byte_size(type_info, type_info_size);
 
-			emit_push(is_addr ? VAL_LOCAL_ADDR : VAL_LOCAL, offs, size);
+				emit_push(is_addr ? VAL_LOCAL_ADDR : VAL_LOCAL, offs, size);
+			}
+			else if ((id = get_param(token_id)) != -1) {
+				emit_push(VAL_LOCAL, 4 * (id + 2), 0);
+
+				set_int_type();
+			}
+			else if ((id = get_global(token_id)) != -1) {
+				type_info_size = copy_type_info(type_info, &global_vars[id][2], global_vars[id][1]);
+
+				int is_addr =
+					type_info[type_info_size - 1] == DECL_ARRAY ||
+					type_info[type_info_size - 1] == DECL_FUN;
+
+				emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
+			}
+			else if ((id = get_int_const(token_id)) != -1) {
+				int val = int_consts_vals[id];
+				set_int_type();
+
+				emit_push(VAL_INT, val, 4);
+			}
+			else {
+				//fprintf(stderr, "Error (%d): unknown identifier %s\n", lineno, token_id);
+				printf("Error (%d): unknown identifier %s\n", lineno, token_id);
+			}
+			next_token();
+			return;
 		}
-		else if ((id = get_param(token_id)) != -1) {
-			emit_push(VAL_LOCAL, 4 * (id + 2), 0);
 
-			set_int_type();
-		}
-		else if ((id = get_global(token_id)) != -1) {
-			type_info_size = global_vars[id][1];
-			memcpy(type_info, &global_vars[id][2], type_info_size * sizeof(type_info[0]));
-
-			int is_addr = 
-				type_info[type_info_size - 1] == DECL_ARRAY ||
-				type_info[type_info_size - 1] == DECL_FUN;
-
-			emit_push(is_addr ? VAL_GLOB_ADDR : VAL_GLOB, id, 0);
-		}
-		else if ((id = get_int_const(token_id)) != -1) {
-			int val = int_consts_vals[id];
-			set_int_type();
-
-			emit_push(VAL_INT, val, 4);
-		}
-		else {
-			//fprintf(stderr, "Error (%d): unknown identifier %s\n", lineno, token_id);
-			printf("Error (%d): unknown identifier %s\n", lineno, token_id);
-		}
 		next_token();
-		return;
 	}
-	
-	next_token();
 }
 
 void convert_to_addr(int ref) {
@@ -253,8 +240,7 @@ void parse_postfix_expr() {
 
 			parse_token(T_RBRACKET);
 
-			type_info_size = item_type_info_size;
-			memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
+			type_info_size = copy_type_info(type_info, item_type_info, item_type_info_size);
 		}
 		else if (token == T_INC || token == T_DEC) {
 			int inc = token == T_INC;
@@ -273,10 +259,11 @@ void parse_postfix_expr() {
 }
 
 void parse_unary_expr() {
-	if (token == T_INC || token == T_DEC) {
+	switch (token) {
+	case T_INC: case T_DEC: {
 		int inc = token == T_INC;
 		next_token();
-		
+
 		parse_unary_expr();
 
 		convert_to_addr(last_value_ref);
@@ -287,7 +274,7 @@ void parse_unary_expr() {
 		set_int_type();
 		return;
 	}
-	if (token == T_NOT) {
+	case T_NOT: {
 		next_token();
 
 		parse_unary_expr();
@@ -298,15 +285,15 @@ void parse_unary_expr() {
 		set_int_type();
 		return;
 	}
-	if (token == T_ADD) {
+	case T_ADD: {
 		next_token();
-		
+
 		parse_unary_expr();
 
 		set_int_type();
 		return;
 	}
-	if (token == T_SUB) {
+	case T_SUB: {
 		next_token();
 
 		parse_unary_expr();
@@ -317,7 +304,7 @@ void parse_unary_expr() {
 		set_int_type();
 		return;
 	}
-	if (token == T_BIT_AND) {
+	case T_BIT_AND: {
 		next_token();
 
 		parse_unary_expr();
@@ -327,7 +314,7 @@ void parse_unary_expr() {
 		set_int_type(); // FIXME
 		return;
 	}
-	if (token == T_MUL) {
+	case T_MUL: {
 		next_token();
 
 		parse_unary_expr();
@@ -344,15 +331,12 @@ void parse_unary_expr() {
 		emit(OP_DEREF);
 		emit(get_type_byte_size(item_type_info, item_type_info_size));
 
-		type_info_size = item_type_info_size;
-		memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
-
-		//dump_type(type_info, type_info_size);
+		type_info_size = copy_type_info(type_info, item_type_info, item_type_info_size);
 		return;
 	}
-	if (token == T_SIZEOF) {
+	case T_SIZEOF: {
 		next_token();
-		
+
 		int code = nopcodes;
 		parse_unary_expr();
 
@@ -363,7 +347,9 @@ void parse_unary_expr() {
 		return;
 	}
 
-	parse_postfix_expr();
+	default:
+		parse_postfix_expr();
+	}
 }
 
 int op_prec(int op) {
@@ -770,17 +756,16 @@ void parse_enum() {
 }
 
 void parse_stmt() {
-	if (token == T_TYPEID || token == T_CONST) {
+	switch (token) {
+	case T_TYPEID: case T_CONST:
 		parse_declaration(DECL_CTX_DEFAULT);
 		return;
-	}
 
-	if (token == T_ENUM) {
+	case T_ENUM:
 		parse_enum();
 		return;
-	}
 
-	if (token == T_RETURN) {
+	case T_RETURN: {
 		next_token();
 
 		if (token == T_SEMI) {
@@ -795,8 +780,7 @@ void parse_stmt() {
 		emit(OP_RETURN);
 		return;
 	}
-
-	if (token == T_IF) {
+	case T_IF: {
 		next_token();
 
 		parse_token(T_LPAREN);
@@ -823,18 +807,16 @@ void parse_stmt() {
 			next_token();
 
 			parse_stmt();
-		} 
+		}
 		else {
 			end_label = noteq_label;
 		}
 
 		emit(OP_LABEL);
 		emit(end_label);
-
 		return;
 	}
-
-	if (token == T_SWITCH) {
+	case T_SWITCH: {
 		next_token();
 
 		parse_token(T_LPAREN);
@@ -848,7 +830,7 @@ void parse_stmt() {
 		parse_assignment_expr();
 		emit(OP_SAVE);
 		emit(4);
-		
+
 		parse_token(T_RPAREN);
 
 		int end_label = nlabels++;
@@ -869,8 +851,7 @@ void parse_stmt() {
 		end_scope();
 		return;
 	}
-
-	if (token == T_CASE) {
+	case T_CASE: {
 		next_token();
 
 		int scope = find_scope(SCOPE_SWITCH);
@@ -890,7 +871,7 @@ void parse_stmt() {
 		parse_primary_expr();
 
 		parse_token(T_COLON);
-		
+
 		int var = scopes[scope][4];
 		int var_offs = local_vars[var][0];
 
@@ -908,8 +889,7 @@ void parse_stmt() {
 		parse_stmt();
 		return;
 	}
-
-	if (token == T_DEFAULT) {
+	case T_DEFAULT: {
 		next_token();
 
 		parse_token(T_COLON);
@@ -928,8 +908,7 @@ void parse_stmt() {
 		parse_stmt();
 		return;
 	}
-
-	if (token == T_WHILE) {
+	case T_WHILE: {
 		next_token();
 
 		int start_label = nlabels++;
@@ -945,7 +924,7 @@ void parse_stmt() {
 		parse_assignment_expr();
 
 		parse_token(T_RPAREN);
-		
+
 		emit(OP_JMPZ);
 		emit(end_label);
 
@@ -960,8 +939,7 @@ void parse_stmt() {
 		end_scope();
 		return;
 	}
-
-	if (token == T_DO) {
+	case T_DO: {
 		next_token();
 
 		int start_label = nlabels++;
@@ -996,11 +974,9 @@ void parse_stmt() {
 		emit(end_label);
 
 		end_scope();
-
 		return;
 	}
-
-	if (token == T_FOR) {
+	case T_FOR: {
 		next_token();
 
 		int start_label = nlabels++;
@@ -1059,8 +1035,7 @@ void parse_stmt() {
 		end_scope();
 		return;
 	}
-
-	if (token == T_BREAK) {
+	case T_BREAK: {
 		next_token();
 
 		emit(OP_JMP);
@@ -1069,8 +1044,7 @@ void parse_stmt() {
 		parse_token(T_SEMI);
 		return;
 	}
-
-	if (token == T_CONTINUE) {
+	case T_CONTINUE: {
 		next_token();
 
 		emit(OP_JMP);
@@ -1079,15 +1053,11 @@ void parse_stmt() {
 		parse_token(T_SEMI);
 		return;
 	}
-
-	// ;
-	if (token == T_SEMI) {
+	case T_SEMI: {
 		next_token();
 		return;
 	}
-
-	//
-	if (token == T_LCURLY) {
+	case T_LCURLY: {
 		start_block_scope();
 
 		next_token();
@@ -1098,8 +1068,11 @@ void parse_stmt() {
 		return;
 	}
 
-	parse_assignment_expr();
-	parse_token(T_SEMI);
+	default:
+		parse_assignment_expr();
+		parse_token(T_SEMI);
+		break;
+	}
 }
 
 void parse_stmts(int terminator) {
@@ -1122,39 +1095,11 @@ void parse_stmts(int terminator) {
 // end parser
 
 
-// cpool
-int add_str(const char* s) {
-	int size = strlen(s) + 1;
-
-	memcpy(cpool + cpool_size, s, size);
-	cpool_size += size;
-	return cpool_size - size;
-}
-
-int add_int_const(const char* name, int val) {
-	int id = nint_consts++;
-	strcpy(int_consts[id], name);
-	int_consts_vals[id] = val;
-
-	return id;
-}
-
-int get_int_const(const char* s) {
-	for (int i = nint_consts - 1; i >= 0; --i) {
-		if (!strcmp(int_consts[i], s)) return i;
-	}
-	return -1;
-}
-
-
-// end cpool
-
 void start_func_decl(const char* s) {
 	strcpy(funcname, s);
 
 	int id = add_global(s);
-	global_vars[id][1] = type_info_size;
-	memcpy(&global_vars[id][2], type_info, type_info_size * sizeof(type_info[0]));
+	global_vars[id][1] = copy_type_info(&global_vars[id][2], type_info, type_info_size);
 
 	nparams = 0;
 }
@@ -1194,8 +1139,7 @@ int add_local(const char* s) {
 	stack_size += get_type_byte_size(type_info, type_info_size);
 
 	local_vars[index][0] = -stack_size;
-	local_vars[index][1] = type_info_size;
-	memcpy(&local_vars[index][2], type_info, type_info_size * sizeof(type_info[0]));
+	local_vars[index][1] = copy_type_info(&local_vars[index][2], type_info, type_info_size);
 
 	return index;
 }
@@ -1205,89 +1149,6 @@ int get_local(const char* s) {
 		if (!strcmp(locals[i], s)) return i;
 	}
 	return -1;
-}
-
-
-// asmgen
-
-void gen_cpool() {
-	fprintf(ftarget, ".const\n");
-
-	for (int i = 0; i < cpool_size; ) {
-		int size = strlen(&cpool[i]) + 1;
-		fprintf(ftarget, "__str_%d db ", i);
-
-		int quoted = 0;
-		for (int j = 0; j < size; ++j) {
-			char ch = cpool[i + j];
-			if (ch < ' ' || ch == '\'') {
-				if (quoted) fprintf(ftarget, "', ", ch);
-				else if (j != 0) fprintf(ftarget, ", ");
-				fprintf(ftarget, "%02XH", ch);
-				quoted = 0;
-			}
-			else {
-				if (j != 0 && !quoted) fprintf(ftarget, ", '");
-				else if (!quoted) fprintf(ftarget, "'");
-				fprintf(ftarget, "%c", ch);
-				quoted = 1;
-			}
-		}
-
-		fprintf(ftarget, "\n");
-
-		i += size;
-	}
-	fprintf(ftarget, "\n");
-}
-
-const char* get_basic_type_asm_name(int size) {
-	switch (size) {
-	case 1:
-		return "db";
-	case 2:
-		return "dw";
-	case 4:
-		return "dd";
-	}
-	return 0;
-}
-
-void gen_globals() {
-	// public section
-	for (int i = 0; i < nglobals; ++i) {
-		if (global_vars[i][0] == ATTR_EXTERN) {
-			fprintf(ftarget, "_%s PROTO\n", globals[i]);
-		}
-		else {
-			fprintf(ftarget, "public _%s\n", globals[i]);
-		}
-	}
-
-	fprintf(ftarget, ".data\n");
-	for (int i = 0; i < nglobals; ++i) {
-		if (global_vars[i][0] == ATTR_EXTERN) continue;
-
-		int type_size = global_vars[i][1];
-		if (global_vars[i][2 + type_size - 1] == DECL_FUN) continue;
-
-		int type_info_size = global_vars[i][1];
-		int* type_info = &global_vars[i][2];
-		
-		int basic_type = get_basic_type(type_info, type_info_size);
-		const char* basic_type_name = get_basic_type_asm_name(types_sizes[basic_type]);
-
-		int array_size = get_type_array_size(type_info, type_info_size);
-
-		
-		if (type_info[type_info_size - 1] == DECL_ARRAY) {
-			fprintf(ftarget, "_%s %s %d dup (0)\n", globals[i], basic_type_name, array_size);
-		}
-		else {
-			fprintf(ftarget, "_%s %s 0\n", globals[i], basic_type_name);
-		}
-	}
-	fprintf(ftarget, "\n");
 }
 
 void compile() {
@@ -1302,11 +1163,10 @@ void compile() {
 	next_token();
 	parse_stmts(T_EOF);
 
-	gen_globals();
-	gen_cpool();
+	gen_globals(ftarget);
+	gen_cpool(ftarget);
 
 	fprintf(ftarget, "end\n");
-	
 }
 // 
 
