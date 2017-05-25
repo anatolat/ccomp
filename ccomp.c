@@ -313,7 +313,6 @@ int next_token_helper() {
 		ch = fgetc(fsource);
 		if (ch == '\n') ++lineno;
 
-
 		// ignore preprocessor directives
 		if (ch == '#') {
 			while (ch != '\n' && ch != EOF) {
@@ -340,7 +339,7 @@ int next_token_helper() {
 					if (ch == '*') {
 						ch = fgetc(fsource);
 						if (ch == '/') {
-							ch = fgetc(fsource);
+							ch = ' ';
 							break;
 						}
 
@@ -606,13 +605,16 @@ int check_token(int expected) {
 }
 
 void parse_token(int expected) {
-	next_token();
 	check_token(expected);
+	next_token();
 }
 
 int try_parse_token(int expected) {
-	next_token();
-	return token == expected;
+	if (token == expected) {
+		next_token();
+		return 1;
+	}
+	return 0;
 }
 
 void parse_primary_expr() {
@@ -1200,7 +1202,8 @@ void parse_declarator(int ctx) {
 
 	parse_direct_declarator(id, &func);
 	if (func) {
-		if (try_parse_token(T_LCURLY)) {
+		next_token(); 
+		if (token == T_LCURLY) {
 			next_token();
 
 			start_func_body();
@@ -1331,7 +1334,9 @@ void parse_stmt() {
 	}
 
 	if (token == T_IF) {
-		parse_token(T_LPAREN);
+		next_token();
+
+		check_token(T_LPAREN);
 		next_token();
 
 		parse_assignment_expr();
@@ -1468,6 +1473,8 @@ void parse_stmt() {
 	}
 
 	if (token == T_WHILE) {
+		next_token();
+
 		int start_label = nlabels++;
 		int end_label = nlabels++;
 
@@ -1476,9 +1483,9 @@ void parse_stmt() {
 		emit(OP_LABEL);
 		emit(start_label);
 
-		parse_token(T_LPAREN);
-
+		check_token(T_LPAREN);
 		next_token();
+
 		parse_assignment_expr();
 
 		check_token(T_RPAREN);
@@ -1545,13 +1552,15 @@ void parse_stmt() {
 	}
 
 	if (token == T_FOR) {
+		next_token();
+
 		int start_label = nlabels++;
 		int end_label = nlabels++;
 		int continue_label = nlabels++;
 
 		start_loop_scope(end_label, continue_label);
 
-		parse_token(T_LPAREN);
+		check_token(T_LPAREN);
 		next_token();
 
 		if (token == T_TYPEID) {
