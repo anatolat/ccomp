@@ -656,8 +656,7 @@ void parse_primary_expr() {
 
 		parse_assignment_expr();
 
-		check_token(T_RPAREN);
-		next_token();
+		parse_token(T_RPAREN);
 		return;
 	}
 	if (check_token(T_ID)) {
@@ -741,8 +740,7 @@ void parse_postfix_expr() {
 				}
 			}
 
-			check_token(T_RPAREN);
-			next_token();
+			parse_token(T_RPAREN);
 
 			opcodes[call_header] = emit(param_count);
 			for (int i = 0; i < param_count; ++i) {
@@ -768,8 +766,7 @@ void parse_postfix_expr() {
 			emit(is_addr ? OP_DEREF_ADDR : OP_DEREF);
 			emit(get_type_byte_size(item_type_info, item_type_info_size));
 
-			check_token(T_RBRACKET);
-			next_token();
+			parse_token(T_RBRACKET);
 
 			type_info_size = item_type_info_size;
 			memcpy(type_info, item_type_info, item_type_info_size * sizeof(type_info[0]));
@@ -1053,8 +1050,7 @@ void parse_expr(int min_prec) {
 			emit(OP_LABEL);
 			emit(q_zero_label);
 
-			check_token(T_COLON);
-			next_token();
+			parse_token(T_COLON);
 		}
 		parse_expr(prec <= 2 ? prec : prec + 1);
 
@@ -1118,10 +1114,8 @@ void parse_func_params() {
 }
 
 void parse_decl_spec() {
-	if (token == T_CONST) {
-		// consts are not supported yet
-		next_token();
-	}
+	// consts are not supported yet
+	try_parse_token(T_CONST);
 
 	check_token(T_TYPEID);
 	
@@ -1129,13 +1123,12 @@ void parse_decl_spec() {
 	type_info[type_info_size++] = token_num;
 	type_info[type_info_size++] = DECL_BASIC;
 
+	next_token();
 }
 
 // declaration_specifiers
 void parse_decl_specs() {
 	parse_decl_spec();
-
-	next_token();
 }
 
 /*
@@ -1169,8 +1162,7 @@ void parse_direct_declarator(char* id, int* func) {
 
 			next_token();
 
-			check_token(T_RBRACKET);
-			next_token();
+			parse_token(T_RBRACKET);
 		}
 		else if (token == T_LPAREN) {
 			*func = 1;
@@ -1212,8 +1204,7 @@ void parse_declarator(int ctx) {
 			end_func();
 		}
 		else {
-			check_token(T_SEMI);
-			next_token();
+			parse_token(T_SEMI);
 
 			int id = get_global(funcname);
 			global_vars[id][0] = ATTR_EXTERN;
@@ -1251,8 +1242,7 @@ void parse_declarator(int ctx) {
 		}
 
 		if (ctx == DECL_CTX_DEFAULT) {
-			check_token(T_SEMI);
-			next_token();
+			parse_token(T_SEMI);
 		}
 	}
 }
@@ -1260,15 +1250,11 @@ void parse_declarator(int ctx) {
 void parse_declaration(int ctx) {
 	parse_decl_specs();
 	parse_declarator(ctx);
-
-	//dump_type(type_info, type_info_size);
 }
 
 void parse_enum() {
 	next_token();
-
-	check_token(T_LCURLY);
-	next_token();
+	parse_token(T_LCURLY);
 
 	int value = 0;
 
@@ -1276,16 +1262,13 @@ void parse_enum() {
 
 	while (token != T_RCURLY && token != T_EOF) {
 		strcpy(id, token_id);
-
-		check_token(T_ID);
-		next_token();
+		parse_token(T_ID);
 
 		if (token == T_ASSIGNMENT) {
 			next_token();
 
 			value = token_num;
-			check_token(T_INT_LIT);
-			next_token();
+			parse_token(T_INT_LIT);
 		}
 
 		add_int_const(id, value++);
@@ -1297,11 +1280,8 @@ void parse_enum() {
 		next_token();
 	}
 
-	check_token(T_RCURLY);
-	next_token();
-
-	check_token(T_SEMI);
-	next_token();
+	parse_token(T_RCURLY);
+	parse_token(T_SEMI);
 }
 
 void parse_stmt() {
@@ -1325,9 +1305,7 @@ void parse_stmt() {
 			parse_assignment_expr();
 		}
 
-		check_token(T_SEMI);
-		next_token();
-
+		parse_token(T_SEMI);
 
 		emit(OP_RETURN);
 		return;
@@ -1336,13 +1314,11 @@ void parse_stmt() {
 	if (token == T_IF) {
 		next_token();
 
-		check_token(T_LPAREN);
-		next_token();
+		parse_token(T_LPAREN);
 
 		parse_assignment_expr();
 
-		check_token(T_RPAREN);
-		next_token();
+		parse_token(T_RPAREN);
 
 		int noteq_label = nlabels++;
 		emit(OP_JMPZ);
@@ -1376,8 +1352,7 @@ void parse_stmt() {
 	if (token == T_SWITCH) {
 		next_token();
 
-		check_token(T_LPAREN);
-		next_token();
+		parse_token(T_LPAREN);
 
 		set_int_type();
 		int var = add_local("$tmp");
@@ -1389,8 +1364,7 @@ void parse_stmt() {
 		emit(OP_SAVE);
 		emit(4);
 		
-		check_token(T_RPAREN);
-		next_token();
+		parse_token(T_RPAREN);
 
 		int end_label = nlabels++;
 
@@ -1430,8 +1404,7 @@ void parse_stmt() {
 
 		parse_primary_expr();
 
-		check_token(T_COLON);
-		next_token();
+		parse_token(T_COLON);
 		
 		int var = scopes[scope][4];
 		int var_offs = local_vars[var][0];
@@ -1454,8 +1427,7 @@ void parse_stmt() {
 	if (token == T_DEFAULT) {
 		next_token();
 
-		check_token(T_COLON);
-		next_token();
+		parse_token(T_COLON);
 
 		int scope = find_scope(SCOPE_SWITCH);
 		int case_label = scopes[scope][3];
@@ -1483,13 +1455,11 @@ void parse_stmt() {
 		emit(OP_LABEL);
 		emit(start_label);
 
-		check_token(T_LPAREN);
-		next_token();
+		parse_token(T_LPAREN);
 
 		parse_assignment_expr();
 
-		check_token(T_RPAREN);
-		next_token();
+		parse_token(T_RPAREN);
 		
 		emit(OP_JMPZ);
 		emit(end_label);
@@ -1520,22 +1490,16 @@ void parse_stmt() {
 
 		parse_stmt();
 
-		check_token(T_WHILE);
-		next_token();
-
-		check_token(T_LPAREN);
-		next_token();
+		parse_token(T_WHILE);
+		parse_token(T_LPAREN);
 
 		emit(OP_LABEL);
 		emit(continue_label);
 
 		parse_assignment_expr();
 
-		check_token(T_RPAREN);
-		next_token();
-
-		check_token(T_SEMI);
-		next_token();
+		parse_token(T_RPAREN);
+		parse_token(T_SEMI);
 
 		emit(OP_JMPZ);
 		emit(end_label);
@@ -1560,8 +1524,7 @@ void parse_stmt() {
 
 		start_loop_scope(end_label, continue_label);
 
-		check_token(T_LPAREN);
-		next_token();
+		parse_token(T_LPAREN);
 
 		if (token == T_TYPEID) {
 			parse_declaration(DECL_CTX_FOR_INIT);
@@ -1570,8 +1533,7 @@ void parse_stmt() {
 			parse_assignment_expr();
 		}
 
-		check_token(T_SEMI);
-		next_token();
+		parse_token(T_SEMI);
 
 		emit(OP_LABEL);
 		emit(start_label);
@@ -1583,8 +1545,7 @@ void parse_stmt() {
 		emit(OP_JMPZ);
 		emit(end_label);
 
-		check_token(T_SEMI);
-		next_token();
+		parse_token(T_SEMI);
 
 		emit(OP_FOR);
 		int increment_end = emit(0);
@@ -1598,8 +1559,7 @@ void parse_stmt() {
 		}
 		opcodes[increment_end] = nopcodes;
 
-		check_token(T_RPAREN);
-		next_token();
+		parse_token(T_RPAREN);
 
 		parse_stmt();
 
@@ -1621,8 +1581,7 @@ void parse_stmt() {
 		emit(OP_JMP);
 		emit(find_break_label());
 
-		check_token(T_SEMI);
-		next_token();
+		parse_token(T_SEMI);
 		return;
 	}
 
@@ -1632,8 +1591,7 @@ void parse_stmt() {
 		emit(OP_JMP);
 		emit(find_continue_label());
 
-		check_token(T_SEMI);
-		next_token();
+		parse_token(T_SEMI);
 		return;
 	}
 
@@ -1656,9 +1614,7 @@ void parse_stmt() {
 	}
 
 	parse_assignment_expr();
-	//printf(";\n");
-	check_token(T_SEMI);
-	next_token();
+	parse_token(T_SEMI);
 }
 
 void parse_stmts(int terminator) {
