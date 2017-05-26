@@ -173,6 +173,7 @@ int next_token_helper() {
 		else if (!strcmp(token_id, "default")) { return T_DEFAULT; }
 		else if (!strcmp(token_id, "enum")) { return T_ENUM; }
 		else if (!strcmp(token_id, "const")) { return T_CONST; }
+		else if (!strcmp(token_id, "extern")) { return T_EXTERN; }
 		else if (!strcmp(token_id, "sizeof")) { return T_SIZEOF; }
 		else {
 			for (int i = 0; i < ntypes; ++i) {

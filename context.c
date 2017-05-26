@@ -40,10 +40,23 @@ int get_int_const(const char* s) {
 }
 
 
-int add_global(const char* s) {
-	int index = nglobals++;
+int add_global(const char* s, int attrs) {
+	int index = get_global(s);
+
+	if (index >= 0) {
+		if (attrs == ATTR_PUBLIC ||
+				attrs == 0 && global_vars[index][0] == ATTR_EXTERN ||
+				attrs == ATTR_EXTERN && global_vars[index][0] == 0) {
+			global_vars[index][0] = ATTR_PUBLIC;
+		}
+
+		return index;
+	}
+
+	index = nglobals++;
 	strcpy(globals[index], s);
 
+	global_vars[index][0] = attrs;
 	global_vars[index][1] = type_info_size;
 	memcpy(&global_vars[index][2], type_info, type_info_size * sizeof(type_info[0]));
 

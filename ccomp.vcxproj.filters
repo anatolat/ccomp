@@ -59,5 +59,8 @@
     <ClInclude Include="type_info.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="preprocessor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

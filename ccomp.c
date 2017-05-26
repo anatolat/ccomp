@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <string.h>
+#include <memory.h>
 #include "lexer.h"
 #include "token.h"
 #include "types.h"
 #include "codegen.h"
 #include "context.h"
 #include "type_info.h"
+#include "preprocessor.h"
 
 FILE* ftarget;
 
@@ -15,7 +17,6 @@ enum {
 	SCOPE_LOOP,
 	SCOPE_SWITCH
 };
-
 
 int nscopes;
 int scopes[64][8];
@@ -41,11 +42,9 @@ int last_value_ref;
 
 int add_param(const char* s);
 int add_local(const char* s);
-int add_global(const char* s);
 
 int get_local(const char* s);
 int get_param(const char* s);
-int get_global(const char* s);
 
 void start_func_decl(const char* s);
 void start_func_body();
@@ -584,7 +583,12 @@ void parse_func_params() {
 	check_token(T_RPAREN);
 }
 
-void parse_decl_spec() {
+int parse_decl_spec() {
+	int attrs = 0;
+	if (try_parse_token(T_EXTERN)) {
+		attrs = ATTR_EXTERN;
+	}
+
 	// consts are not supported yet
 	try_parse_token(T_CONST);
 
@@ -595,11 +599,13 @@ void parse_decl_spec() {
 	type_info[type_info_size++] = DECL_BASIC;
 
 	next_token();
+
+	return attrs;
 }
 
 // declaration_specifiers
-void parse_decl_specs() {
-	parse_decl_spec();
+int parse_decl_specs() {
+	return parse_decl_spec();
 }
 
 /*
@@ -652,7 +658,7 @@ void parse_direct_declarator(char* id, int* func) {
 }
 
 // declarator : pointer? direct_declarator
-void parse_declarator(int ctx) {
+void parse_declarator(int ctx, int attrs) {
 	// pointer
 	while (token == T_MUL) {
 		type_info[type_info_size++] = DECL_PTR;
@@ -669,6 +675,9 @@ void parse_declarator(int ctx) {
 		if (token == T_LCURLY) {
 			next_token();
 
+			int id = get_global(funcname);
+			global_vars[id][0] = ATTR_PUBLIC;
+
 			start_func_body();
 
 			parse_stmts(T_RCURLY);
@@ -676,9 +685,6 @@ void parse_declarator(int ctx) {
 		}
 		else {
 			parse_token(T_SEMI);
-
-			int id = get_global(funcname);
-			global_vars[id][0] = ATTR_EXTERN;
 
 			funcname[0] = 0;
 		}
@@ -693,7 +699,7 @@ void parse_declarator(int ctx) {
 				add_local(id);
 			}
 			else {
-				add_global(id);
+				add_global(id, attrs);
 			}
 		}
 
@@ -719,8 +725,8 @@ void parse_declarator(int ctx) {
 }
 
 void parse_declaration(int ctx) {
-	parse_decl_specs();
-	parse_declarator(ctx);
+	int attrs = parse_decl_specs();
+	parse_declarator(ctx, attrs);
 }
 
 void parse_enum() {
@@ -757,7 +763,7 @@ void parse_enum() {
 
 void parse_stmt() {
 	switch (token) {
-	case T_TYPEID: case T_CONST:
+	case T_TYPEID: case T_CONST: case T_EXTERN:
 		parse_declaration(DECL_CTX_DEFAULT);
 		return;
 
@@ -1098,7 +1104,7 @@ void parse_stmts(int terminator) {
 void start_func_decl(const char* s) {
 	strcpy(funcname, s);
 
-	int id = add_global(s);
+	int id = add_global(s, ATTR_EXTERN);
 	global_vars[id][1] = copy_type_info(&global_vars[id][2], type_info, type_info_size);
 
 	nparams = 0;
@@ -1238,15 +1244,34 @@ void add_extern_func(const char* s) {
 	type_info[type_info_size++] = DECL_BASIC;
 	type_info[type_info_size++] = DECL_FUN;
 
-	int id = add_global(s);
-	global_vars[id][0] = ATTR_EXTERN;
+	add_global(s, ATTR_EXTERN);
 }
 
+const char* change_ext(const char* s, const char* ext) {
+	int dot = -1;
+	for (int i = 0; s[i]; ++i) {
+		if (s[i] == '\\' || s[i] == '/') {
+			dot = -1;
+		}
+		else if (s[i] == '.') {
+			dot = i;
+		}
+	}
+
+	int ext_len = strlen(ext);
+	int src_len = dot == -1 ? strlen(s) : dot;
+	
+	const char* dst = malloc(src_len + ext_len + 1);
+	memcpy(dst, s, src_len);
+	memcpy(dst + src_len, ext, ext_len + 1);
+
+	return dst;
+}
 
 int main(int argc, char** argv) {
 
 	if (argc != 3)  {
-		printf("Usage ccomp <source.c> <target>\n");
+		printf("Usage ccomp <source.c> <target.asm>\n");
 		return -1;
 	}
 
@@ -1255,6 +1280,7 @@ int main(int argc, char** argv) {
 	add_extern_func("fopen");
 	add_extern_func("fclose");
 	add_extern_func("fgetc");
+	add_extern_func("fputc");
 	add_extern_func("ungetc");
 	add_extern_func("fprintf");
 	add_extern_func("printf");
@@ -1263,17 +1289,25 @@ int main(int argc, char** argv) {
 	add_extern_func("strcmp");
 	add_extern_func("strlen");
 	add_extern_func("memcpy");
+	add_extern_func("malloc");
+	add_extern_func("free");
 
 	add_type("void", 0);
 	add_type("char", 1);
 	add_type("int", 4);
 	add_type("FILE", 4);
 
-	fsource = fopen(argv[1], "r");
+	const char* sfile = change_ext(argv[2], ".s");
+
+	preprocess(sfile, argv[1]);
+
+	fsource = fopen(sfile, "r");
 	ftarget = fopen(argv[2], "w");
+
 	compile();
 
 	fclose(fsource);
 	fclose(ftarget);
 
+	free(sfile);
 }

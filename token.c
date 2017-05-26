@@ -63,6 +63,7 @@ const char* tok2str(int tok) {
 	case T_DEFAULT: return "DEFAULT";
 	case T_ENUM: return "ENUM";
 	case T_CONST: return "CONST";
+	case T_EXTERN: return "EXTERN";
 	case T_SIZEOF: return "SIZEOF";
 	}
 	return "XXX";

@@ -62,6 +62,7 @@ enum {
 	, T_DEFAULT
 	, T_ENUM
 	, T_CONST
+	, T_EXTERN
 	, T_SIZEOF
 };
 

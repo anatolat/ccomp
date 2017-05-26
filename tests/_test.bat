@@ -55,6 +55,7 @@ goto :end
   if exist "%name%.obj" del /f /q "%name%.obj"
   if exist "%name%.exe" del /f /q "%name%.exe"
   if exist "%name%.out" del /f /q "%name%.out"
+  if exist "%name%.s" del /f /q "%name%.s"
 
   %CC% %input% %name%.asm 2> %name%.err
   if not %errorlevel% equ 0 (goto :fail)

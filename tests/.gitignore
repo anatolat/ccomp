@@ -3,4 +3,5 @@
 *.out
 *.asm
 *.err
+*.s
 main.c

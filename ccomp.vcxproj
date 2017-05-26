@@ -93,6 +93,7 @@
     <ClInclude Include="codegen.h" />
     <ClInclude Include="context.h" />
     <ClInclude Include="lexer.h" />
+    <ClInclude Include="preprocessor.h" />
     <ClInclude Include="token.h" />
     <ClInclude Include="types.h" />
     <ClInclude Include="type_info.h" />

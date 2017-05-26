@@ -346,7 +346,7 @@ void gen_globals(FILE* ftarget) {
 		if (global_vars[i][0] == ATTR_EXTERN) {
 			fprintf(ftarget, "_%s PROTO\n", globals[i]);
 		}
-		else {
+		else if (global_vars[i][0] == ATTR_PUBLIC) {
 			fprintf(ftarget, "public _%s\n", globals[i]);
 		}
 	}
