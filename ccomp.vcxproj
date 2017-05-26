@@ -80,23 +80,23 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ccomp.c" />
-    <ClCompile Include="codegen.c" />
-    <ClCompile Include="context.c" />
-    <ClCompile Include="lexer.c" />
-    <ClCompile Include="preprocessor.c" />
-    <ClCompile Include="token.c" />
-    <ClCompile Include="types.c" />
-    <ClCompile Include="type_info.c" />
+    <ClCompile Include="src\ccomp.c" />
+    <ClCompile Include="src\codegen.c" />
+    <ClCompile Include="src\context.c" />
+    <ClCompile Include="src\lexer.c" />
+    <ClCompile Include="src\preprocessor.c" />
+    <ClCompile Include="src\token.c" />
+    <ClCompile Include="src\types.c" />
+    <ClCompile Include="src\type_info.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="codegen.h" />
-    <ClInclude Include="context.h" />
-    <ClInclude Include="lexer.h" />
-    <ClInclude Include="preprocessor.h" />
-    <ClInclude Include="token.h" />
-    <ClInclude Include="types.h" />
-    <ClInclude Include="type_info.h" />
+    <ClInclude Include="src\codegen.h" />
+    <ClInclude Include="src\context.h" />
+    <ClInclude Include="src\lexer.h" />
+    <ClInclude Include="src\preprocessor.h" />
+    <ClInclude Include="src\token.h" />
+    <ClInclude Include="src\types.h" />
+    <ClInclude Include="src\type_info.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

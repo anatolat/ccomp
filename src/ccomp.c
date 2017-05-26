@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include <memory.h>
+#include <stdlib.h>
 #include "lexer.h"
 #include "token.h"
 #include "types.h"
@@ -1247,7 +1247,7 @@ void add_extern_func(const char* s) {
 	add_global(s, ATTR_EXTERN);
 }
 
-const char* change_ext(const char* s, const char* ext) {
+char* change_ext(const char* s, const char* ext) {
 	int dot = -1;
 	for (int i = 0; s[i]; ++i) {
 		if (s[i] == '\\' || s[i] == '/') {
@@ -1261,7 +1261,7 @@ const char* change_ext(const char* s, const char* ext) {
 	int ext_len = strlen(ext);
 	int src_len = dot == -1 ? strlen(s) : dot;
 	
-	const char* dst = malloc(src_len + ext_len + 1);
+	char* dst = malloc(src_len + ext_len + 1);
 	memcpy(dst, s, src_len);
 	memcpy(dst + src_len, ext, ext_len + 1);
 
@@ -1297,7 +1297,7 @@ int main(int argc, char** argv) {
 	add_type("int", 4);
 	add_type("FILE", 4);
 
-	const char* sfile = change_ext(argv[2], ".s");
+	char* sfile = change_ext(argv[2], ".s");
 
 	preprocess(sfile, argv[1]);
 

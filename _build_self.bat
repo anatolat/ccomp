@@ -3,6 +3,8 @@ call "%VS120COMNTOOLS%\vsvars32.bat"
 
 setlocal enabledelayedexpansion
 
+cd src
+
 set src= ^
 ccomp.c ^
 codegen.c ^
@@ -21,16 +23,16 @@ goto :link
   set input=%1
   set name=%~n1
 
-  .\bin\ccomp %input% bin\%name%.asm
+  ..\bin\ccomp %input% ..\bin\%name%.asm
   if not %errorlevel% equ 0 (goto :eof)
   
-  ML /c /nologo /Sg /Zi  /W3 /errorReport:prompt /Fo bin\%name%.obj /Ta bin\%name%.asm 
+  ML /c /nologo /Sg /Zi  /W3 /errorReport:prompt /Fo ..\bin\%name%.obj /Ta ..\bin\%name%.asm 
   if not %errorlevel% equ 0 (goto :eof)
 
   goto :eof
 
 
 :link
-LINK /nologo /SUBSYSTEM:CONSOLE bin\*.obj /OUT:bin\ccomp.exe
+LINK /nologo /SUBSYSTEM:CONSOLE ..\bin\*.obj /OUT:..\bin\ccomp.exe
 if not %errorlevel% equ 0 (goto :eof)
 
